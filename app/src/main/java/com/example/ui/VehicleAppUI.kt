@@ -46,21 +46,21 @@ import java.util.*
 
 var isDarkMode by mutableStateOf(true)
 
-val BentoBg: Color @Composable get() = if (isDarkMode) Color(0xFF09090B) else Color(0xFFF3F4F6)
-val BentoCardBg: Color @Composable get() = if (isDarkMode) Color(0xFF141417) else Color(0xFFFFFFFF)
-val BentoCardBorder: Color @Composable get() = if (isDarkMode) Color(0xFF27272A) else Color(0xFFE5E7EB)
-val BentoAccentIndigo: Color @Composable get() = if (isDarkMode) Color(0xFF6366F1) else Color(0xFF4F46E5)
-val BentoAccentIndigoLight: Color @Composable get() = if (isDarkMode) Color(0x186366F1) else Color(0x184F46E5)
-val BentoTextPrimary: Color @Composable get() = if (isDarkMode) Color(0xFFF4F4F5) else Color(0xFF111827)
-val BentoTextSecondary: Color @Composable get() = if (isDarkMode) Color(0xFFA1A1AA) else Color(0xFF4B5563)
-val BentoTextMuted: Color @Composable get() = if (isDarkMode) Color(0xFF71717A) else Color(0xFF6B7280)
+val BentoBg: Color get() = if (isDarkMode) Color(0xFF09090B) else Color(0xFFF3F4F6)
+val BentoCardBg: Color get() = if (isDarkMode) Color(0xFF141417) else Color(0xFFFFFFFF)
+val BentoCardBorder: Color get() = if (isDarkMode) Color(0xFF27272A) else Color(0xFFE5E7EB)
+val BentoAccentIndigo: Color get() = if (isDarkMode) Color(0xFF6366F1) else Color(0xFF4F46E5)
+val BentoAccentIndigoLight: Color get() = if (isDarkMode) Color(0x186366F1) else Color(0x184F46E5)
+val BentoTextPrimary: Color get() = if (isDarkMode) Color(0xFFF4F4F5) else Color(0xFF111827)
+val BentoTextSecondary: Color get() = if (isDarkMode) Color(0xFFA1A1AA) else Color(0xFF4B5563)
+val BentoTextMuted: Color get() = if (isDarkMode) Color(0xFF71717A) else Color(0xFF6B7280)
 
-val BentoEmerald: Color @Composable get() = if (isDarkMode) Color(0xFF10B981) else Color(0xFF059669)
-val BentoEmeraldBg: Color @Composable get() = if (isDarkMode) Color(0x1510B981) else Color(0x15059669)
-val BentoAmber: Color @Composable get() = if (isDarkMode) Color(0xFFF59E0B) else Color(0xFFD97706)
-val BentoAmberBg: Color @Composable get() = if (isDarkMode) Color(0x15F59E0B) else Color(0x15D97706)
-val BentoRose: Color @Composable get() = if (isDarkMode) Color(0xFFEF4444) else Color(0xFFDC2626)
-val BentoRoseBg: Color @Composable get() = if (isDarkMode) Color(0x15EF4444) else Color(0x15DC2626)
+val BentoEmerald: Color get() = if (isDarkMode) Color(0xFF10B981) else Color(0xFF059669)
+val BentoEmeraldBg: Color get() = if (isDarkMode) Color(0x1510B981) else Color(0x15059669)
+val BentoAmber: Color get() = if (isDarkMode) Color(0xFFF59E0B) else Color(0xFFD97706)
+val BentoAmberBg: Color get() = if (isDarkMode) Color(0x15F59E0B) else Color(0x15D97706)
+val BentoRose: Color get() = if (isDarkMode) Color(0xFFEF4444) else Color(0xFFDC2626)
+val BentoRoseBg: Color get() = if (isDarkMode) Color(0x15EF4444) else Color(0x15DC2626)
 
 enum class AppTab {
     DASHBOARD,

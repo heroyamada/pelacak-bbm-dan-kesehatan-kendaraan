@@ -1990,7 +1990,7 @@ fun AddFuelDialog(
                     text = "Catat Pengisian BBM",
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
-                    color = Color(0xFF0F172A),
+                    color = BentoTextPrimary,
                     modifier = Modifier.padding(bottom = 6.dp)
                 )
 
@@ -2138,7 +2138,7 @@ fun AddServiceDialog(
                     text = "Catat Pemeliharaan / Servis",
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
-                    color = Color(0xFF0F172A),
+                    color = BentoTextPrimary,
                     modifier = Modifier.padding(bottom = 6.dp)
                 )
 
@@ -2280,7 +2280,7 @@ fun OilConfigDialog(
                     text = "Konfigurasi Oli Mesin",
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
-                    color = Color(0xFF0F172A)
+                    color = BentoTextPrimary
                 )
 
                 OutlinedTextField(
@@ -2372,7 +2372,7 @@ fun TireConfigDialog(
                     text = "Konfigurasi Ban Kendaraan",
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
-                    color = Color(0xFF0F172A)
+                    color = BentoTextPrimary
                 )
 
                 OutlinedTextField(
@@ -2493,7 +2493,7 @@ fun ServiceConfigDialog(
                     text = "Konfigurasi Servis Umum",
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
-                    color = Color(0xFF0F172A)
+                    color = BentoTextPrimary
                 )
 
                 OutlinedTextField(

@@ -204,7 +204,6 @@ fun VehicleAppUI() {
                     }
                 )
             }
-
             // Dialogs
             if (showEditVehicleDialog && activeProfile != null) {
                 AddVehicleDialog(
@@ -224,18 +223,18 @@ fun VehicleAppUI() {
                     onDismissRequest = { showDeleteVehicleDialog = false },
                     containerColor = BentoCardBg,
                     title = { Text("Hapus Kendaraan", color = BentoTextPrimary) },
-                    text = { Text("Yakin hapus profil '${activeProfile.name}'?", color = BentoTextSecondary) },
+                    text = { Text("Yakin hapus profil '${activeProfile.name}'? Semua data servis dan BBM akan hilang.", color = BentoTextSecondary) },
                     confirmButton = {
                         TextButton(onClick = {
                             val newProfiles = profiles.filter { it.id != activeProfile.id }
-                            profiles = newProfiles.ifEmpty { listOf(com.example.data.VehicleProfile(name = "Baru", type = "Roda 2")) }
+                            profiles = newProfiles.ifEmpty { listOf(com.example.data.VehicleProfile(name = "Kendaraan Baru", type = "Roda 2")) }
                             storage.saveProfiles(profiles)
                             activeProfileId = profiles.first().id
                             showDeleteVehicleDialog = false
                         }) { Text("Hapus", color = BentoRose) }
                     },
                     dismissButton = {
-                        TextButton(onClick = { showDeleteVehicleDialog = false }) { Text("Batal") }
+                        TextButton(onClick = { showDeleteVehicleDialog = false }) { Text("Batal", color = BentoTextPrimary) }
                     }
                 )
             }
@@ -249,7 +248,6 @@ fun VehicleAppUI() {
                     }
                 )
             }
-
             if (showAddFuelDialog) {
                 AddFuelDialog(
                     currentOdo = state.currentOdometer,
@@ -446,7 +444,10 @@ fun HeaderSection(
                             )
                             DropdownMenuItem(
                                 text = { Text("+ Tambah Kendaraan Baru", color = BentoAccentIndigo) },
-                                onClick = { onAddProfile(); expanded = false }
+                                onClick = { 
+                                    onAddProfile()
+                                    expanded = false
+                                }
                             )
                         }
                     }
@@ -531,7 +532,8 @@ fun BottomNavigationBar(selectedTab: AppTab, onTabSelected: (AppTab) -> Unit) {
 fun DashboardTab(
     state: VehicleState,
     onNavigateToTab: (AppTab) -> Unit,
-    onAddFuelClick: () -> Unit
+    onAddFuelClick: () -> Unit,
+    onConfigureVisibility: () -> Unit
 ) {
     val scrollState = rememberScrollState()
 
@@ -549,17 +551,13 @@ fun DashboardTab(
     val oilProgress = (oilElapsed / state.oilIntervalKm).coerceIn(0.0, 1.0).toFloat()
     val oilDue = oilRemaining <= 500.0
 
-    val tireElapsed = state.currentOdometer - state.tireInstallOdo
-    val tireRemaining = maxOf(0.0, state.tireIntervalKm - tireElapsed)
-    val tireProgress = (tireElapsed / state.tireIntervalKm).coerceIn(0.0, 1.0).toFloat()
-    val tireDue = tireRemaining <= 3000.0
-
     val serviceElapsed = state.currentOdometer - state.generalServiceLastOdo
     val serviceRemaining = maxOf(0.0, state.generalServiceIntervalKm - serviceElapsed)
     val serviceProgress = (serviceElapsed / state.generalServiceIntervalKm).coerceIn(0.0, 1.0).toFloat()
     val serviceDue = serviceRemaining <= 1000.0
 
-    val alertCount = (if (oilDue) 1 else 0) + (if (tireDue) 1 else 0) + (if (serviceDue) 1 else 0)
+    val tireAlerts = state.tires.count { tire -> (state.currentOdometer - tire.installOdo) >= (tire.intervalKm - 3000.0) }
+    val alertCount = (if (oilDue) 1 else 0) + tireAlerts + (if (serviceDue) 1 else 0)
 
     Column(
         modifier = Modifier
@@ -685,55 +683,72 @@ fun DashboardTab(
         }
 
         // Component Health Title
-        Text(
-            text = "Kesehatan & Jadwal Servis Komponen",
-            fontWeight = FontWeight.Bold,
-            fontSize = 16.sp,
-            color = BentoTextPrimary,
-            modifier = Modifier.padding(top = 4.dp)
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+        ) {
+            Text(
+                text = "Kesehatan & Jadwal Servis Komponen",
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                color = BentoTextPrimary,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(onClick = onConfigureVisibility) { Text("Atur Card", color = BentoAccentIndigo, fontSize = 12.sp) }
+        }
 
         // Oil Health Card
-        ComponentHealthCard(
-            title = "Oli Mesin",
-            subtitle = state.oilBrand,
-            elapsed = oilElapsed,
-            interval = state.oilIntervalKm,
-            remaining = oilRemaining,
-            progress = oilProgress,
-            isDue = oilDue,
-            lastLoggedMessage = "Terakhir diganti pada ${formatOdo(state.oilLastChangeOdo)}",
-            icon = Icons.Default.Settings,
-            barColor = if (oilDue) BentoRose else if (oilRemaining <= 1500) BentoAmber else BentoEmerald
-        )
+        if (state.visibility.showOil) {
+            ComponentHealthCard(
+                title = "Oli Mesin",
+                subtitle = state.oilBrand,
+                elapsed = oilElapsed,
+                interval = state.oilIntervalKm,
+                remaining = oilRemaining,
+                progress = oilProgress,
+                isDue = oilDue,
+                lastLoggedMessage = "Terakhir diganti pada ${formatOdo(state.oilLastChangeOdo)}",
+                icon = Icons.Default.Settings,
+                barColor = if (oilDue) BentoRose else if (oilRemaining <= 1500) BentoAmber else BentoEmerald
+            )
+        }
 
-        // Tires Health Card
-        ComponentHealthCard(
-            title = "Pemeliharaan Ban",
-            subtitle = "${state.tireBrand} (${state.tireCompound} Compound)",
-            elapsed = tireElapsed,
-            interval = state.tireIntervalKm,
-            remaining = tireRemaining,
-            progress = tireProgress,
-            isDue = tireDue,
-            lastLoggedMessage = "Pasang baru pada ${formatOdo(state.tireInstallOdo)}",
-            icon = Icons.Default.DirectionsCar,
-            barColor = if (tireDue) BentoRose else if (tireRemaining <= 8000) BentoAmber else BentoEmerald
-        )
+        // Tires Health Cards
+        state.tires.filter { it.isVisible }.forEach { tire ->
+            val tElapsed = state.currentOdometer - tire.installOdo
+            val tRemaining = maxOf(0.0, tire.intervalKm - tElapsed)
+            val tProgress = (tElapsed / tire.intervalKm).coerceIn(0.0, 1.0).toFloat()
+            val tDue = tRemaining <= 3000.0
+            
+            ComponentHealthCard(
+                title = tire.name,
+                subtitle = "${tire.brand} (${tire.compound} Compound)",
+                elapsed = tElapsed,
+                interval = tire.intervalKm,
+                remaining = tRemaining,
+                progress = tProgress,
+                isDue = tDue,
+                lastLoggedMessage = "Pasang baru pada ${formatOdo(tire.installOdo)}",
+                icon = Icons.Default.DirectionsCar,
+                barColor = if (tDue) BentoRose else if (tRemaining <= 8000) BentoAmber else BentoEmerald
+            )
+        }
 
         // General Service Card
-        ComponentHealthCard(
-            title = "Servis Umum Berkala",
-            subtitle = "Sistem Engine, Rem & Elektrikal",
-            elapsed = serviceElapsed,
-            interval = state.generalServiceIntervalKm,
-            remaining = serviceRemaining,
-            progress = serviceProgress,
-            isDue = serviceDue,
-            lastLoggedMessage = "Servis terakhir pada ${formatOdo(state.generalServiceLastOdo)}",
-            icon = Icons.Default.Build,
-            barColor = if (serviceDue) BentoRose else if (serviceRemaining <= 2000) BentoAmber else BentoEmerald
-        )
+        if (state.visibility.showGeneralService) {
+            ComponentHealthCard(
+                title = "Servis Umum Berkala",
+                subtitle = "Sistem Engine, Rem & Elektrikal",
+                elapsed = serviceElapsed,
+                interval = state.generalServiceIntervalKm,
+                remaining = serviceRemaining,
+                progress = serviceProgress,
+                isDue = serviceDue,
+                lastLoggedMessage = "Servis terakhir pada ${formatOdo(state.generalServiceLastOdo)}",
+                icon = Icons.Default.Build,
+                barColor = if (serviceDue) BentoRose else if (serviceRemaining <= 2000) BentoAmber else BentoEmerald
+            )
+        }
 
         // Quick Actions Row
         Row(
@@ -1560,7 +1575,8 @@ fun MaintenanceTab(
     onDeleteServiceLog: (String) -> Unit
 ) {
     var showOilConfigDialog by remember { mutableStateOf(false) }
-    var showTireConfigDialog by remember { mutableStateOf(false) }\n    var activeTireIdForConfig by remember { mutableStateOf("") }
+    var showTireConfigDialog by remember { mutableStateOf(false) }
+    var activeTireIdForConfig by remember { mutableStateOf("") }
     var showServiceConfigDialog by remember { mutableStateOf(false) }
 
     LazyColumn(
@@ -1593,17 +1609,17 @@ fun MaintenanceTab(
         }
 
         // 2. Tire settings config card
-        item {
+        items(state.tires) { tire ->
             MaintenanceConfigCard(
-                title = "Pemeliharaan Ban",
+                title = tire.name,
                 subtitle = "Ubah merek ban & jenis kompound yang terpasang",
                 details = listOf(
-                    "Merek Ban" to state.tireBrand,
-                    "Jenis Kompound" to "${state.tireCompound} Compound",
-                    "Odometer Pemasangan" to formatOdo(state.tireInstallOdo),
-                    "Target Interval Umur" to formatOdo(state.tireIntervalKm)
+                    "Merek Ban" to tire.brand,
+                    "Jenis Kompound" to "${tire.compound} Compound",
+                    "Odometer Pemasangan" to formatOdo(tire.installOdo),
+                    "Target Interval Umur" to formatOdo(tire.intervalKm)
                 ),
-                onClickEdit = { showTireConfigDialog = true }
+                onClickEdit = { activeTireIdForConfig = tire.id; showTireConfigDialog = true }
             )
         }
 
@@ -1682,24 +1698,28 @@ fun MaintenanceTab(
     }
 
     if (showTireConfigDialog) {
-        TireConfigDialog(
-            currentBrand = state.tireBrand,
-            currentCompound = state.tireCompound,
-            currentInstallOdo = state.tireInstallOdo,
-            currentInterval = state.tireIntervalKm,
-            onDismiss = { showTireConfigDialog = false },
-            onSave = { brand, compound, installOdo, interval ->
-                val updated = state.copy(
-                    tireBrand = brand,
-                    tireCompound = compound,
-                    tireInstallOdo = installOdo,
-                    tireIntervalKm = interval,
-                    currentOdometer = maxOf(state.currentOdometer, installOdo)
-                )
-                onSaveConfig(updated)
-                showTireConfigDialog = false
-            }
-        )
+        val currentTire = state.tires.find { it.id == activeTireIdForConfig }
+        if (currentTire != null) {
+            TireConfigDialog(
+                currentBrand = currentTire.brand,
+                currentCompound = currentTire.compound,
+                currentInstallOdo = currentTire.installOdo,
+                currentInterval = currentTire.intervalKm,
+                onDismiss = { showTireConfigDialog = false },
+                onSave = { brand, compound, installOdo, interval ->
+                    val newTires = state.tires.map { 
+                        if (it.id == currentTire.id) it.copy(brand = brand, compound = compound, installOdo = installOdo, intervalKm = interval) 
+                        else it 
+                    }
+                    val updated = state.copy(
+                        tires = newTires,
+                        currentOdometer = maxOf(state.currentOdometer, installOdo)
+                    )
+                    onSaveConfig(updated)
+                    showTireConfigDialog = false
+                }
+            )
+        }
     }
 
     if (showServiceConfigDialog) {
@@ -2012,7 +2032,7 @@ fun AddFuelDialog(
                     DropdownMenu(
                         expanded = fuelDropdownExpanded,
                         onDismissRequest = { fuelDropdownExpanded = false },
-                        modifier = Modifier.background(Color.White)
+                        modifier = Modifier.background(BentoCardBg)
                     ) {
                         fuelOptions.forEach { option ->
                             DropdownMenuItem(
@@ -2130,7 +2150,7 @@ fun AddServiceDialog(
                     DropdownMenu(
                         expanded = dropdownExpanded,
                         onDismissRequest = { dropdownExpanded = false },
-                        modifier = Modifier.background(Color.White)
+                        modifier = Modifier.background(BentoCardBg)
                     ) {
                         serviceOptions.forEach { option ->
                             DropdownMenuItem(
@@ -2362,7 +2382,7 @@ fun TireConfigDialog(
                     DropdownMenu(
                         expanded = dropdownExpanded,
                         onDismissRequest = { dropdownExpanded = false },
-                        modifier = Modifier.background(Color.White)
+                        modifier = Modifier.background(BentoCardBg)
                     ) {
                         compoundOptions.forEach { option ->
                             DropdownMenuItem(
@@ -2499,6 +2519,8 @@ fun ServiceConfigDialog(
 
 @Composable
 fun AddVehicleDialog(
+    initialName: String = "",
+    initialType: String = "Roda 2",
     onDismiss: () -> Unit,
     onSave: (String, String) -> Unit
 ) {
@@ -2569,7 +2591,8 @@ fun AdjustOdoDialog(
             modifier = Modifier.fillMaxWidth().padding(8.dp)
         ) {
             Column(modifier = Modifier.padding(24.dp)) {
-                Text("Sesuaikan Odometer", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = BentoTextPrimary, modifier = Modifier.padding(bottom = 8.dp))\n                Text("Masukkan angka odometer terkini dalam kilometer (km) untuk menyelaraskan indikator kendaraan.", color = BentoTextSecondary, fontSize = 14.sp, modifier = Modifier.padding(bottom = 16.dp))
+                Text("Sesuaikan Odometer", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = BentoTextPrimary, modifier = Modifier.padding(bottom = 8.dp))
+                Text("Masukkan angka odometer terkini dalam kilometer (km) untuk menyelaraskan indikator kendaraan.", color = BentoTextSecondary, fontSize = 14.sp, modifier = Modifier.padding(bottom = 16.dp))
                 OutlinedTextField(
                     value = odoStr,
                     onValueChange = { odoStr = it },
@@ -2597,6 +2620,7 @@ fun AdjustOdoDialog(
         }
     }
 }
+
 
 @Composable
 fun DashboardVisibilityDialog(

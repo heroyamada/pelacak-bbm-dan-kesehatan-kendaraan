@@ -257,8 +257,7 @@ fun VehicleAppUI() {
                         }
 
                         val updatedLogs = (updatedState.serviceLogs + newLog).sortedByDescending { it.date }
-                        state = updatedState.copy(serviceLogs = updatedLogs)
-                        storage.saveState(state)
+                        saveActiveState(updatedState.copy(serviceLogs = updatedLogs))
                         showAddServiceDialog = false
                     }
                 )

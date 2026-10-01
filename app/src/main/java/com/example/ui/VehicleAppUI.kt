@@ -44,21 +44,23 @@ import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
 
-val BentoBg = Color(0xFF09090B)
-val BentoCardBg = Color(0xFF141417)
-val BentoCardBorder = Color(0xFF27272A)
-val BentoAccentIndigo = Color(0xFF6366F1)
-val BentoAccentIndigoLight = Color(0x186366F1)
-val BentoTextPrimary = Color(0xFFF4F4F5)
-val BentoTextSecondary = Color(0xFFA1A1AA)
-val BentoTextMuted = Color(0xFF71717A)
+var isDarkMode by mutableStateOf(true)
 
-val BentoEmerald = Color(0xFF10B981)
-val BentoEmeraldBg = Color(0x1510B981)
-val BentoAmber = Color(0xFFF59E0B)
-val BentoAmberBg = Color(0x15F59E0B)
-val BentoRose = Color(0xFFEF4444)
-val BentoRoseBg = Color(0x15EF4444)
+val BentoBg: Color @Composable get() = if (isDarkMode) Color(0xFF09090B) else Color(0xFFF3F4F6)
+val BentoCardBg: Color @Composable get() = if (isDarkMode) Color(0xFF141417) else Color(0xFFFFFFFF)
+val BentoCardBorder: Color @Composable get() = if (isDarkMode) Color(0xFF27272A) else Color(0xFFE5E7EB)
+val BentoAccentIndigo: Color @Composable get() = if (isDarkMode) Color(0xFF6366F1) else Color(0xFF4F46E5)
+val BentoAccentIndigoLight: Color @Composable get() = if (isDarkMode) Color(0x186366F1) else Color(0x184F46E5)
+val BentoTextPrimary: Color @Composable get() = if (isDarkMode) Color(0xFFF4F4F5) else Color(0xFF111827)
+val BentoTextSecondary: Color @Composable get() = if (isDarkMode) Color(0xFFA1A1AA) else Color(0xFF4B5563)
+val BentoTextMuted: Color @Composable get() = if (isDarkMode) Color(0xFF71717A) else Color(0xFF6B7280)
+
+val BentoEmerald: Color @Composable get() = if (isDarkMode) Color(0xFF10B981) else Color(0xFF059669)
+val BentoEmeraldBg: Color @Composable get() = if (isDarkMode) Color(0x1510B981) else Color(0x15059669)
+val BentoAmber: Color @Composable get() = if (isDarkMode) Color(0xFFF59E0B) else Color(0xFFD97706)
+val BentoAmberBg: Color @Composable get() = if (isDarkMode) Color(0x15F59E0B) else Color(0x15D97706)
+val BentoRose: Color @Composable get() = if (isDarkMode) Color(0xFFEF4444) else Color(0xFFDC2626)
+val BentoRoseBg: Color @Composable get() = if (isDarkMode) Color(0x15EF4444) else Color(0x15DC2626)
 
 enum class AppTab {
     DASHBOARD,
@@ -104,7 +106,8 @@ fun VehicleAppUI() {
                 onAddProfile = { showAddVehicleDialog = true },
                 onEditProfile = { showEditVehicleDialog = true },
                 onDeleteProfile = { showDeleteVehicleDialog = true },
-                onAdjustOdo = { showAdjustOdoDialog = true }
+                onAdjustOdo = { showAdjustOdoDialog = true },
+                onToggleTheme = { isDarkMode = !isDarkMode }
             )
         },
         bottomBar = {
@@ -185,7 +188,20 @@ fun VehicleAppUI() {
                 AddVehicleDialog(
                     onDismiss = { showAddVehicleDialog = false },
                     onSave = { name, type ->
-                        val newProfile = VehicleProfile(name = name, type = type)
+                        val initialTires = if (type == "Roda 4") {
+                            listOf(
+                                com.example.data.TireState("FL", "Ban Depan Kiri"),
+                                com.example.data.TireState("FR", "Ban Depan Kanan"),
+                                com.example.data.TireState("RL", "Ban Belakang Kiri"),
+                                com.example.data.TireState("RR", "Ban Belakang Kanan")
+                            )
+                        } else {
+                            listOf(
+                                com.example.data.TireState("F", "Ban Depan"),
+                                com.example.data.TireState("R", "Ban Belakang")
+                            )
+                        }
+                        val newProfile = VehicleProfile(name = name, type = type, state = com.example.data.VehicleState(tires = initialTires))
                         profiles = profiles + newProfile
                         storage.saveProfiles(profiles)
                         activeProfileId = newProfile.id
@@ -227,7 +243,10 @@ fun VehicleAppUI() {
                     confirmButton = {
                         TextButton(onClick = {
                             val newProfiles = profiles.filter { it.id != activeProfile.id }
-                            profiles = newProfiles.ifEmpty { listOf(com.example.data.VehicleProfile(name = "Kendaraan Baru", type = "Roda 2")) }
+                            profiles = newProfiles.ifEmpty { 
+                                val defaultTires = listOf(com.example.data.TireState("F", "Ban Depan"), com.example.data.TireState("R", "Ban Belakang"))
+                                listOf(com.example.data.VehicleProfile(name = "Kendaraan Baru", type = "Roda 2", state = com.example.data.VehicleState(tires = defaultTires)))
+                            }
                             storage.saveProfiles(profiles)
                             activeProfileId = profiles.first().id
                             showDeleteVehicleDialog = false
@@ -380,7 +399,8 @@ fun HeaderSection(
     onAddProfile: () -> Unit,
     onEditProfile: () -> Unit,
     onDeleteProfile: () -> Unit,
-    onAdjustOdo: () -> Unit
+    onAdjustOdo: () -> Unit,
+    onToggleTheme: () -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
     
@@ -457,8 +477,13 @@ fun HeaderSection(
                         modifier = Modifier.clickable { onAdjustOdo() }
                     )
                 }
-                IconButton(onClick = onAdjustOdo) {
-                    Icon(Icons.Default.Speed, contentDescription = "Adjust Odometer", tint = BentoTextSecondary)
+                Row {
+                    IconButton(onClick = onToggleTheme) {
+                        Icon(if (isDarkMode) Icons.Default.LightMode else Icons.Default.DarkMode, contentDescription = "Toggle Theme", tint = BentoTextSecondary)
+                    }
+                    IconButton(onClick = onAdjustOdo) {
+                        Icon(Icons.Default.Speed, contentDescription = "Adjust Odometer", tint = BentoTextSecondary)
+                    }
                 }
             }
         }

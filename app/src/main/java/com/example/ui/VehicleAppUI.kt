@@ -163,7 +163,7 @@ fun VehicleAppUI() {
                         
                         val newState = state.copy(
                             fuelLogs = updatedLogs,
-                            currentOdometer = maxOf(finalOdo, state.oilLastChangeOdo, state.tireInstallOdo, state.generalServiceLastOdo)
+                            currentOdometer = maxOf(finalOdo, state.oilLastChangeOdo, state.tires.maxOfOrNull { it.installOdo } ?: 0.0, state.generalServiceLastOdo)
                         )
                         saveActiveState(newState)
                     }
@@ -293,7 +293,6 @@ fun VehicleAppUI() {
                                 currentOdometer = maxOf(state.currentOdometer, odo)
                             )
                             "Ganti Ban" -> state.copy(
-                                tireInstallOdo = odo,
                                 currentOdometer = maxOf(state.currentOdometer, odo)
                             )
                             "Servis Umum" -> state.copy(
@@ -348,10 +347,10 @@ fun getSampleData(): VehicleState {
         oilBrand = "Shell Helix Ultra 10W-40",
         oilLastChangeOdo = 10000.0,
         oilIntervalKm = 5000.0,
-        tireBrand = "Bridgestone Ecopia",
-        tireCompound = "Medium",
-        tireInstallOdo = 10000.0,
-        tireIntervalKm = 40000.0,
+        tires = listOf(
+            com.example.data.TireState(id = "depan", name = "Ban Depan", brand = "Bridgestone Ecopia", compound = "Medium", installOdo = 10000.0, intervalKm = 40000.0),
+            com.example.data.TireState(id = "belakang", name = "Ban Belakang", brand = "Bridgestone Ecopia", compound = "Medium", installOdo = 10000.0, intervalKm = 40000.0)
+        ),
         generalServiceLastOdo = 10000.0,
         generalServiceIntervalKm = 10000.0,
         currentOdometer = 11870.0

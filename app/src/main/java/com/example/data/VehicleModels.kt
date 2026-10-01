@@ -23,19 +23,37 @@ data class ServiceLog(
     val notes: String             // Detail service
 )
 
+data class TireState(
+    val id: String, // "Depan", "Belakang", "Depan Kiri", "Depan Kanan", "Belakang Kiri", "Belakang Kanan"
+    val name: String,
+    val brand: String = "Bridgestone",
+    val compound: String = "Medium", // "Soft", "Medium", "Hard", "Eco"
+    val installOdo: Double = 0.0,
+    val intervalKm: Double = 40000.0,
+    val isVisible: Boolean = true
+)
+
+data class DashboardVisibility(
+    val showOil: Boolean = true,
+    val showGeneralService: Boolean = true
+)
+
 data class VehicleState(
     val fuelLogs: List<FuelLog> = emptyList(),
     val serviceLogs: List<ServiceLog> = emptyList(),
+    
     val oilBrand: String = "Pertamina Fastron",
     val oilLastChangeOdo: Double = 0.0,
     val oilIntervalKm: Double = 5000.0,
-    val tireBrand: String = "Bridgestone",
-    val tireCompound: String = "Medium", // "Soft", "Medium", "Hard", "Eco"
-    val tireInstallOdo: Double = 0.0,
-    val tireIntervalKm: Double = 40000.0,
+    
+    val tires: List<TireState> = emptyList(),
+    
     val generalServiceLastOdo: Double = 0.0,
     val generalServiceIntervalKm: Double = 10000.0,
-    val currentOdometer: Double = 0.0
+    
+    val currentOdometer: Double = 0.0,
+    
+    val visibility: DashboardVisibility = DashboardVisibility()
 )
 
 data class VehicleProfile(

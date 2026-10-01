@@ -7,7 +7,7 @@ import java.io.File
 import java.util.UUID
 
 class VehicleStorage(context: Context) {
-    private val fileName = "vehicle_profiles_v1.json"
+    private val fileName = "vehicle_profiles_v2.json"
     private val file = File(context.filesDir, fileName)
 
     fun saveProfiles(profiles: List<VehicleProfile>) {
@@ -24,13 +24,28 @@ class VehicleStorage(context: Context) {
                 sJson.put("oilBrand", state.oilBrand)
                 sJson.put("oilLastChangeOdo", state.oilLastChangeOdo)
                 sJson.put("oilIntervalKm", state.oilIntervalKm)
-                sJson.put("tireBrand", state.tireBrand)
-                sJson.put("tireCompound", state.tireCompound)
-                sJson.put("tireInstallOdo", state.tireInstallOdo)
-                sJson.put("tireIntervalKm", state.tireIntervalKm)
                 sJson.put("generalServiceLastOdo", state.generalServiceLastOdo)
                 sJson.put("generalServiceIntervalKm", state.generalServiceIntervalKm)
                 sJson.put("currentOdometer", state.currentOdometer)
+                
+                val visJson = JSONObject()
+                visJson.put("showOil", state.visibility.showOil)
+                visJson.put("showGeneralService", state.visibility.showGeneralService)
+                sJson.put("visibility", visJson)
+
+                val tireArray = JSONArray()
+                for (tire in state.tires) {
+                    val tJson = JSONObject()
+                    tJson.put("id", tire.id)
+                    tJson.put("name", tire.name)
+                    tJson.put("brand", tire.brand)
+                    tJson.put("compound", tire.compound)
+                    tJson.put("installOdo", tire.installOdo)
+                    tJson.put("intervalKm", tire.intervalKm)
+                    tJson.put("isVisible", tire.isVisible)
+                    tireArray.put(tJson)
+                }
+                sJson.put("tires", tireArray)
 
                 val fuelArray = JSONArray()
                 for (log in state.fuelLogs) {
@@ -68,9 +83,26 @@ class VehicleStorage(context: Context) {
         }
     }
 
+    private fun createDefaultTires(type: String): List<TireState> {
+        return if (type == "Roda 4") {
+            listOf(
+                TireState("FL", "Ban Depan Kiri"),
+                TireState("FR", "Ban Depan Kanan"),
+                TireState("RL", "Ban Belakang Kiri"),
+                TireState("RR", "Ban Belakang Kanan")
+            )
+        } else {
+            listOf(
+                TireState("F", "Ban Depan"),
+                TireState("R", "Ban Belakang")
+            )
+        }
+    }
+
     fun loadProfiles(): List<VehicleProfile> {
         if (!file.exists()) {
-            return listOf(VehicleProfile(name = "Kendaraan Utamaku", type = "Roda 2"))
+            val type = "Roda 2"
+            return listOf(VehicleProfile(name = "Kendaraan Utamaku", type = type, state = VehicleState(tires = createDefaultTires(type))))
         }
         return try {
             val content = file.readText()
@@ -83,19 +115,52 @@ class VehicleStorage(context: Context) {
                 val name = pJson.optString("name", "Kendaraan")
                 val type = pJson.optString("type", "Roda 2")
                 
-                var state = VehicleState()
+                var state = VehicleState(tires = createDefaultTires(type))
                 if (pJson.has("state")) {
                     val json = pJson.getJSONObject("state")
                     val oilBrand = json.optString("oilBrand", "Pertamina Fastron")
                     val oilLastChangeOdo = json.optDouble("oilLastChangeOdo", 0.0)
                     val oilIntervalKm = json.optDouble("oilIntervalKm", 5000.0)
-                    val tireBrand = json.optString("tireBrand", "Bridgestone")
-                    val tireCompound = json.optString("tireCompound", "Medium")
-                    val tireInstallOdo = json.optDouble("tireInstallOdo", 0.0)
-                    val tireIntervalKm = json.optDouble("tireIntervalKm", 40000.0)
                     val generalServiceLastOdo = json.optDouble("generalServiceLastOdo", 0.0)
                     val generalServiceIntervalKm = json.optDouble("generalServiceIntervalKm", 10000.0)
                     val currentOdometer = json.optDouble("currentOdometer", 0.0)
+                    
+                    var visibility = DashboardVisibility()
+                    if (json.has("visibility")) {
+                        val vJson = json.getJSONObject("visibility")
+                        visibility = DashboardVisibility(
+                            showOil = vJson.optBoolean("showOil", true),
+                            showGeneralService = vJson.optBoolean("showGeneralService", true)
+                        )
+                    }
+
+                    val tires = mutableListOf<TireState>()
+                    if (json.has("tires")) {
+                        val tireArray = json.getJSONArray("tires")
+                        for (i in 0 until tireArray.length()) {
+                            val tJson = tireArray.getJSONObject(i)
+                            tires.add(
+                                TireState(
+                                    id = tJson.optString("id"),
+                                    name = tJson.optString("name"),
+                                    brand = tJson.optString("brand", "Bridgestone"),
+                                    compound = tJson.optString("compound", "Medium"),
+                                    installOdo = tJson.optDouble("installOdo", 0.0),
+                                    intervalKm = tJson.optDouble("intervalKm", 40000.0),
+                                    isVisible = tJson.optBoolean("isVisible", true)
+                                )
+                            )
+                        }
+                    } else {
+                        // Migration from old version
+                        val tireBrand = json.optString("tireBrand", "Bridgestone")
+                        val tireCompound = json.optString("tireCompound", "Medium")
+                        val tireInstallOdo = json.optDouble("tireInstallOdo", 0.0)
+                        val tireIntervalKm = json.optDouble("tireIntervalKm", 40000.0)
+                        tires.addAll(createDefaultTires(type).map { 
+                            it.copy(brand = tireBrand, compound = tireCompound, installOdo = tireInstallOdo, intervalKm = tireIntervalKm)
+                        })
+                    }
 
                     val fuelLogs = mutableListOf<FuelLog>()
                     if (json.has("fuelLogs")) {
@@ -142,22 +207,20 @@ class VehicleStorage(context: Context) {
                         oilBrand = oilBrand,
                         oilLastChangeOdo = oilLastChangeOdo,
                         oilIntervalKm = oilIntervalKm,
-                        tireBrand = tireBrand,
-                        tireCompound = tireCompound,
-                        tireInstallOdo = tireInstallOdo,
-                        tireIntervalKm = tireIntervalKm,
+                        tires = tires,
                         generalServiceLastOdo = generalServiceLastOdo,
                         generalServiceIntervalKm = generalServiceIntervalKm,
-                        currentOdometer = currentOdometer
+                        currentOdometer = currentOdometer,
+                        visibility = visibility
                     )
                 }
                 
                 result.add(VehicleProfile(id = id, name = name, type = type, state = state))
             }
-            if (result.isEmpty()) listOf(VehicleProfile(name = "Kendaraan Utamaku", type = "Roda 2")) else result
+            if (result.isEmpty()) listOf(VehicleProfile(name = "Kendaraan Utamaku", type = "Roda 2", state = VehicleState(tires = createDefaultTires("Roda 2")))) else result
         } catch (e: Exception) {
             e.printStackTrace()
-            listOf(VehicleProfile(name = "Kendaraan Utamaku", type = "Roda 2"))
+            listOf(VehicleProfile(name = "Kendaraan Utamaku", type = "Roda 2", state = VehicleState(tires = createDefaultTires("Roda 2"))))
         }
     }
 }

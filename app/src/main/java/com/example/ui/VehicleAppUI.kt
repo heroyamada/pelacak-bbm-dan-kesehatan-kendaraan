@@ -89,6 +89,9 @@ fun VehicleAppUI() {
     var showAddFuelDialog by remember { mutableStateOf(false) }
     var showAddServiceDialog by remember { mutableStateOf(false) }
     var showAddVehicleDialog by remember { mutableStateOf(false) }
+    var showEditVehicleDialog by remember { mutableStateOf(false) }
+    var showDeleteVehicleDialog by remember { mutableStateOf(false) }
+    var showVisibilityDialog by remember { mutableStateOf(false) }
     var showAdjustOdoDialog by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -99,6 +102,8 @@ fun VehicleAppUI() {
                 profiles = profiles,
                 onProfileSelected = { activeProfileId = it },
                 onAddProfile = { showAddVehicleDialog = true },
+                onEditProfile = { showEditVehicleDialog = true },
+                onDeleteProfile = { showDeleteVehicleDialog = true },
                 onAdjustOdo = { showAdjustOdoDialog = true }
             )
         },
@@ -144,7 +149,8 @@ fun VehicleAppUI() {
                 AppTab.DASHBOARD -> DashboardTab(
                     state = state,
                     onNavigateToTab = { selectedTab = it },
-                    onAddFuelClick = { showAddFuelDialog = true }
+                    onAddFuelClick = { showAddFuelDialog = true },
+                    onConfigureVisibility = { showVisibilityDialog = true }
                 )
                 AppTab.STATISTICS -> StatisticsTab(state = state)
                 AppTab.FUEL_HISTORY -> FuelHistoryTab(
@@ -195,6 +201,54 @@ fun VehicleAppUI() {
                         val newState = state.copy(currentOdometer = newOdo)
                         saveActiveState(newState)
                         showAdjustOdoDialog = false
+                    }
+                )
+            }
+
+            if (showEditVehicleDialog && activeProfile != null) {
+                AddVehicleDialog(
+                    initialName = activeProfile.name,
+                    initialType = activeProfile.type,
+                    onDismiss = { showEditVehicleDialog = false },
+                    onSave = { name, type ->
+                        val updated = activeProfile.copy(name = name, type = type)
+                        profiles = profiles.map { if (it.id == updated.id) updated else it }
+                        storage.saveProfiles(profiles)
+                        showEditVehicleDialog = false
+                    }
+                )
+            }
+            if (showDeleteVehicleDialog && activeProfile != null) {
+                AlertDialog(
+                    onDismissRequest = { showDeleteVehicleDialog = false },
+                    containerColor = BentoCardBg,
+                    title = { Text("Hapus Kendaraan", color = BentoTextPrimary) },
+                    text = { Text("Apakah Anda yakin ingin menghapus profil '${activeProfile.name}'? Semua data servis dan BBM akan hilang.", color = BentoTextSecondary) },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            val newProfiles = profiles.filter { it.id != activeProfile.id }
+                            if (newProfiles.isEmpty()) {
+                                profiles = listOf(com.example.data.VehicleProfile(name = "Kendaraan Baru", type = "Roda 2"))
+                            } else {
+                                profiles = newProfiles
+                            }
+                            storage.saveProfiles(profiles)
+                            activeProfileId = profiles.first().id
+                            showDeleteVehicleDialog = false
+                        }) { Text("Hapus", color = BentoRose) }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showDeleteVehicleDialog = false }) { Text("Batal", color = BentoTextPrimary) }
+                    }
+                )
+            }
+            if (showVisibilityDialog) {
+                DashboardVisibilityDialog(
+                    state = state,
+                    onDismiss = { showVisibilityDialog = false },
+                    onSave = { newVisibility, newTires ->
+                        saveActiveState(state.copy(visibility = newVisibility, tires = newTires))
+                        showVisibilityDialog = false
                     }
                 )
             }
@@ -330,6 +384,8 @@ fun HeaderSection(
     profiles: List<VehicleProfile>,
     onProfileSelected: (String) -> Unit,
     onAddProfile: () -> Unit,
+    onEditProfile: () -> Unit,
+    onDeleteProfile: () -> Unit,
     onAdjustOdo: () -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -376,13 +432,19 @@ fun HeaderSection(
                         ) {
                             profiles.forEach { profile ->
                                 DropdownMenuItem(
-                                    text = { Text(profile.name, color = BentoTextPrimary) },
-                                    onClick = { 
-                                        onProfileSelected(profile.id)
-                                        expanded = false
-                                    }
-                                )
-                            }
+                                text = { Text("Edit Profil Saat Ini", color = BentoTextSecondary) },
+                                onClick = { 
+                                    onEditProfile()
+                                    expanded = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Hapus Profil Saat Ini", color = BentoRose) },
+                                onClick = { 
+                                    onDeleteProfile()
+                                    expanded = false
+                                }
+                            )
                             DropdownMenuItem(
                                 text = { Text("+ Tambah Kendaraan Baru", color = BentoAccentIndigo) },
                                 onClick = { 
@@ -471,6 +533,7 @@ fun BottomNavigationBar(selectedTab: AppTab, onTabSelected: (AppTab) -> Unit) {
 // -------------------- TAB 1: DASHBOARD (RINGKASAN) --------------------
 @Composable
 fun DashboardTab(
+    onConfigureVisibility: () -> Unit,
     state: VehicleState,
     onNavigateToTab: (AppTab) -> Unit,
     onAddFuelClick: () -> Unit
@@ -636,7 +699,7 @@ fun DashboardTab(
         )
 
         // Oil Health Card
-        ComponentHealthCard(
+        Componentif (state.visibility.showOil) { HealthCard(
             title = "Oli Mesin",
             subtitle = state.oilBrand,
             elapsed = oilElapsed,
@@ -647,7 +710,7 @@ fun DashboardTab(
             lastLoggedMessage = "Terakhir diganti pada ${formatOdo(state.oilLastChangeOdo)}",
             icon = Icons.Default.Settings,
             barColor = if (oilDue) BentoRose else if (oilRemaining <= 1500) BentoAmber else BentoEmerald
-        )
+        ) }
 
         // Tires Health Card
         ComponentHealthCard(
@@ -664,7 +727,7 @@ fun DashboardTab(
         )
 
         // General Service Card
-        ComponentHealthCard(
+        Componentif (state.visibility.showGeneralService) { HealthCard(
             title = "Servis Umum Berkala",
             subtitle = "Sistem Engine, Rem & Elektrikal",
             elapsed = serviceElapsed,
@@ -675,7 +738,7 @@ fun DashboardTab(
             lastLoggedMessage = "Servis terakhir pada ${formatOdo(state.generalServiceLastOdo)}",
             icon = Icons.Default.Build,
             barColor = if (serviceDue) BentoRose else if (serviceRemaining <= 2000) BentoAmber else BentoEmerald
-        )
+        ) }
 
         // Quick Actions Row
         Row(
@@ -1503,6 +1566,7 @@ fun MaintenanceTab(
 ) {
     var showOilConfigDialog by remember { mutableStateOf(false) }
     var showTireConfigDialog by remember { mutableStateOf(false) }
+    var activeTireIdForConfig by remember { mutableStateOf("") }
     var showServiceConfigDialog by remember { mutableStateOf(false) }
 
     LazyColumn(
@@ -2441,11 +2505,13 @@ fun ServiceConfigDialog(
 
 @Composable
 fun AddVehicleDialog(
+    initialName: String = "",
+    initialType: String = "Roda 2",
     onDismiss: () -> Unit,
     onSave: (String, String) -> Unit
 ) {
-    var name by remember { mutableStateOf("") }
-    var type by remember { mutableStateOf("Roda 2") }
+    var name by remember { mutableStateOf(initialName) }
+    var type by remember { mutableStateOf(initialType) }
     
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -2511,7 +2577,8 @@ fun AdjustOdoDialog(
             modifier = Modifier.fillMaxWidth().padding(8.dp)
         ) {
             Column(modifier = Modifier.padding(24.dp)) {
-                Text("Sesuaikan Odometer", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = BentoTextPrimary, modifier = Modifier.padding(bottom = 16.dp))
+                Text("Sesuaikan Odometer", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = BentoTextPrimary, modifier = Modifier.padding(bottom = 8.dp))
+                Text("Masukkan angka odometer terkini dalam kilometer (km) untuk menyelaraskan indikator kendaraan.", color = BentoTextSecondary, fontSize = 14.sp, modifier = Modifier.padding(bottom = 16.dp))
                 OutlinedTextField(
                     value = odoStr,
                     onValueChange = { odoStr = it },
@@ -2532,6 +2599,57 @@ fun AdjustOdoDialog(
                             val o = odoStr.toDoubleOrNull()
                             if (o != null) onSave(o)
                         },
+                        colors = ButtonDefaults.buttonColors(containerColor = BentoAccentIndigo)
+                    ) { Text("Simpan") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DashboardVisibilityDialog(
+    state: VehicleState,
+    onDismiss: () -> Unit,
+    onSave: (com.example.data.DashboardVisibility, List<com.example.data.TireState>) -> Unit
+) {
+    var showOil by remember { mutableStateOf(state.visibility.showOil) }
+    var showGeneralService by remember { mutableStateOf(state.visibility.showGeneralService) }
+    var tires by remember { mutableStateOf(state.tires) }
+    
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = BentoCardBg),
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth().padding(8.dp)
+        ) {
+            Column(modifier = Modifier.padding(24.dp)) {
+                Text("Pilih Card yang Ditampilkan", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = BentoTextPrimary, modifier = Modifier.padding(bottom = 16.dp))
+                LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
+                    item {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = showOil, onCheckedChange = { showOil = it }, colors = CheckboxDefaults.colors(checkedColor = BentoAccentIndigo, uncheckedColor = BentoTextSecondary))
+                            Text("Oli Mesin", color = BentoTextPrimary)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = showGeneralService, onCheckedChange = { showGeneralService = it }, colors = CheckboxDefaults.colors(checkedColor = BentoAccentIndigo, uncheckedColor = BentoTextSecondary))
+                            Text("Servis Umum", color = BentoTextPrimary)
+                        }
+                    }
+                    items(tires) { tire ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = tire.isVisible, onCheckedChange = { isChecked ->
+                                tires = tires.map { if (it.id == tire.id) it.copy(isVisible = isChecked) else it }
+                            }, colors = CheckboxDefaults.colors(checkedColor = BentoAccentIndigo, uncheckedColor = BentoTextSecondary))
+                            Text(tire.name, color = BentoTextPrimary)
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(24.dp))
+                Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                    TextButton(onClick = onDismiss) { Text("Batal", color = BentoTextSecondary) }
+                    Button(
+                        onClick = { onSave(com.example.data.DashboardVisibility(showOil, showGeneralService), tires) },
                         colors = ButtonDefaults.buttonColors(containerColor = BentoAccentIndigo)
                     ) { Text("Simpan") }
                 }

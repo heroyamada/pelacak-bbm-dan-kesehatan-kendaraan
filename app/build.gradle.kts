@@ -43,7 +43,7 @@ android {
       signingConfig = if (hasReleaseKeystore) {
         signingConfigs.getByName("release")
       } else {
-        signingConfigs.getByName("debugConfig")
+        signingConfigs.getByName("debug")
       }
     }
     debug { }
@@ -133,4 +133,5 @@ dependencies {
   "ksp"(libs.androidx.room.compiler)
   "ksp"(libs.moshi.kotlin.codegen)
 }
+
 

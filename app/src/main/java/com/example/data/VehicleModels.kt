@@ -37,3 +37,10 @@ data class VehicleState(
     val generalServiceIntervalKm: Double = 10000.0,
     val currentOdometer: Double = 0.0
 )
+
+data class VehicleProfile(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String,
+    val type: String, // "Roda 2" or "Roda 4"
+    val state: VehicleState = VehicleState()
+)

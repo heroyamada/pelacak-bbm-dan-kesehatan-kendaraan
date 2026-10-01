@@ -38,6 +38,7 @@ import com.example.data.FuelLog
 import com.example.data.ServiceLog
 import com.example.data.VehicleState
 import com.example.data.VehicleStorage
+import com.example.data.VehicleProfile
 import java.text.DecimalFormat
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
@@ -71,18 +72,15 @@ fun VehicleAppUI() {
     val context = LocalContext.current
     val storage = remember { VehicleStorage(context) }
     
-    // Load initial state, if empty pre-populate with realistic mock data for preview
-    var state by remember {
-        val loaded = storage.loadState()
-        mutableStateOf(
-            if (loaded.fuelLogs.isEmpty() && loaded.currentOdometer == 0.0) {
-                val initialState = getSampleData()
-                storage.saveState(initialState)
-                initialState
-            } else {
-                loaded
-            }
-        )
+    var profiles by remember { mutableStateOf(storage.loadProfiles()) }
+    var activeProfileId by remember { mutableStateOf(profiles.firstOrNull()?.id ?: "") }
+    val activeProfile = profiles.find { it.id == activeProfileId } ?: profiles.firstOrNull()
+    var state = activeProfile?.state ?: VehicleState()
+    
+    fun saveActiveState(newState: VehicleState) {
+        val updatedProfile = activeProfile?.copy(state = newState) ?: return
+        profiles = profiles.map { if (it.id == updatedProfile.id) updatedProfile else it }
+        storage.saveProfiles(profiles)
     }
 
     var selectedTab by remember { mutableStateOf(AppTab.DASHBOARD) }
@@ -90,11 +88,19 @@ fun VehicleAppUI() {
     // Modals visibility
     var showAddFuelDialog by remember { mutableStateOf(false) }
     var showAddServiceDialog by remember { mutableStateOf(false) }
+    var showAddVehicleDialog by remember { mutableStateOf(false) }
+    var showAdjustOdoDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = BentoBg,
         topBar = {
-            HeaderSection(state)
+            HeaderSection(
+                activeProfile = activeProfile,
+                profiles = profiles,
+                onProfileSelected = { activeProfileId = it },
+                onAddProfile = { showAddVehicleDialog = true },
+                onAdjustOdo = { showAdjustOdoDialog = true }
+            )
         },
         bottomBar = {
             BottomNavigationBar(selectedTab) { selectedTab = it }
@@ -149,27 +155,49 @@ fun VehicleAppUI() {
                         val oldMaxServiceOdo = state.serviceLogs.maxOfOrNull { it.odometer } ?: 0.0
                         val finalOdo = maxOf(newMaxOdo, oldMaxServiceOdo)
                         
-                        state = state.copy(
+                        val newState = state.copy(
                             fuelLogs = updatedLogs,
                             currentOdometer = maxOf(finalOdo, state.oilLastChangeOdo, state.tireInstallOdo, state.generalServiceLastOdo)
                         )
-                        storage.saveState(state)
+                        saveActiveState(newState)
                     }
                 )
                 AppTab.MAINTENANCE -> MaintenanceTab(
                     state = state,
                     onSaveConfig = { updatedState ->
-                        state = updatedState
-                        storage.saveState(state)
+                        saveActiveState(updatedState)
                     },
                     onDeleteServiceLog = { serviceId ->
                         val updatedLogs = state.serviceLogs.filter { it.id != serviceId }
-                        state = state.copy(serviceLogs = updatedLogs)
-                        storage.saveState(state)
+                        val newState = state.copy(serviceLogs = updatedLogs)
+                        saveActiveState(newState)
                     }
                 )
             }
 
+            if (showAddVehicleDialog) {
+                AddVehicleDialog(
+                    onDismiss = { showAddVehicleDialog = false },
+                    onSave = { name, type ->
+                        val newProfile = VehicleProfile(name = name, type = type)
+                        profiles = profiles + newProfile
+                        storage.saveProfiles(profiles)
+                        activeProfileId = newProfile.id
+                        showAddVehicleDialog = false
+                    }
+                )
+            }
+            if (showAdjustOdoDialog) {
+                AdjustOdoDialog(
+                    currentOdo = state.currentOdometer,
+                    onDismiss = { showAdjustOdoDialog = false },
+                    onSave = { newOdo ->
+                        val newState = state.copy(currentOdometer = newOdo)
+                        saveActiveState(newState)
+                        showAdjustOdoDialog = false
+                    }
+                )
+            }
             // Dialogs
             if (showAddFuelDialog) {
                 AddFuelDialog(
@@ -186,11 +214,11 @@ fun VehicleAppUI() {
                         val updatedLogs = (state.fuelLogs + newLog).sortedBy { it.odometer }
                         val finalOdo = maxOf(state.currentOdometer, odo)
                         
-                        state = state.copy(
+                        val newState = state.copy(
                             fuelLogs = updatedLogs,
                             currentOdometer = finalOdo
                         )
-                        storage.saveState(state)
+                        saveActiveState(newState)
                         showAddFuelDialog = false
                     }
                 )
@@ -298,7 +326,15 @@ fun calculateEfficiencies(fuelLogs: List<FuelLog>): List<Double> {
 }
 
 @Composable
-fun HeaderSection(state: VehicleState) {
+fun HeaderSection(
+    activeProfile: VehicleProfile?,
+    profiles: List<VehicleProfile>,
+    onProfileSelected: (String) -> Unit,
+    onAddProfile: () -> Unit,
+    onAdjustOdo: () -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    
     Surface(
         color = BentoBg,
         contentColor = BentoTextPrimary,
@@ -314,24 +350,58 @@ fun HeaderSection(state: VehicleState) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(
-                    imageVector = Icons.Default.DirectionsCar,
-                    contentDescription = "Car",
+                    imageVector = if (activeProfile?.type == "Roda 2") Icons.Default.TwoWheeler else Icons.Default.DirectionsCar,
+                    contentDescription = "Vehicle",
                     tint = BentoAccentIndigo,
                     modifier = Modifier.size(28.dp)
                 )
                 Spacer(modifier = Modifier.width(10.dp))
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
+                    Box {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clickable { expanded = true }
+                        ) {
+                            Text(
+                                text = activeProfile?.name ?: "Pilih Kendaraan",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = BentoTextPrimary
+                            )
+                            Icon(Icons.Default.ArrowDropDown, contentDescription = "Pilih", tint = BentoTextPrimary)
+                        }
+                        DropdownMenu(
+                            expanded = expanded,
+                            onDismissRequest = { expanded = false },
+                            modifier = Modifier.background(BentoCardBg)
+                        ) {
+                            profiles.forEach { profile ->
+                                DropdownMenuItem(
+                                    text = { Text(profile.name, color = BentoTextPrimary) },
+                                    onClick = { 
+                                        onProfileSelected(profile.id)
+                                        expanded = false
+                                    }
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text("+ Tambah Kendaraan Baru", color = BentoAccentIndigo) },
+                                onClick = { 
+                                    onAddProfile()
+                                    expanded = false
+                                }
+                            )
+                        }
+                    }
                     Text(
-                        text = "Vehicle Tracker & Health",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = BentoTextPrimary
-                    )
-                    Text(
-                        text = "Odometer: ${formatOdo(state.currentOdometer)}",
+                        text = "Odo: ${formatOdo(activeProfile?.state?.currentOdometer ?: 0.0)} km",
                         fontSize = 13.sp,
-                        color = BentoTextSecondary
+                        color = BentoTextSecondary,
+                        modifier = Modifier.clickable { onAdjustOdo() }
                     )
+                }
+                IconButton(onClick = onAdjustOdo) {
+                    Icon(Icons.Default.Speed, contentDescription = "Adjust Odometer", tint = BentoTextSecondary)
                 }
             }
         }
@@ -1803,7 +1873,7 @@ fun AddFuelDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = BentoCardBg),
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier
                 .fillMaxWidth()
@@ -1951,7 +2021,7 @@ fun AddServiceDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = BentoCardBg),
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier
                 .fillMaxWidth()
@@ -2093,7 +2163,7 @@ fun OilConfigDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = BentoCardBg),
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier
                 .fillMaxWidth()
@@ -2185,7 +2255,7 @@ fun TireConfigDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = BentoCardBg),
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier
                 .fillMaxWidth()
@@ -2306,7 +2376,7 @@ fun ServiceConfigDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = BentoCardBg),
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier
                 .fillMaxWidth()
@@ -2364,6 +2434,107 @@ fun ServiceConfigDialog(
                     ) {
                         Text("Simpan")
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AddVehicleDialog(
+    onDismiss: () -> Unit,
+    onSave: (String, String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var type by remember { mutableStateOf("Roda 2") }
+    
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = BentoCardBg),
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth().padding(8.dp)
+        ) {
+            Column(modifier = Modifier.padding(24.dp)) {
+                Text("Tambah Kendaraan", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = BentoTextPrimary, modifier = Modifier.padding(bottom = 16.dp))
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Nama Kendaraan (Contoh: Beat, Avanza)", color = BentoTextSecondary) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = BentoTextPrimary,
+                        unfocusedTextColor = BentoTextPrimary,
+                        focusedBorderColor = BentoAccentIndigo,
+                        unfocusedBorderColor = BentoCardBorder
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Jenis Kendaraan", color = BentoTextSecondary, fontSize = 14.sp)
+                Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = type == "Roda 2",
+                        onClick = { type = "Roda 2" },
+                        label = { Text("Roda 2") },
+                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = BentoAccentIndigo, selectedLabelColor = Color.White)
+                    )
+                    FilterChip(
+                        selected = type == "Roda 4",
+                        onClick = { type = "Roda 4" },
+                        label = { Text("Roda 4") },
+                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = BentoAccentIndigo, selectedLabelColor = Color.White)
+                    )
+                }
+                Spacer(modifier = Modifier.height(24.dp))
+                Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                    TextButton(onClick = onDismiss) { Text("Batal", color = BentoTextSecondary) }
+                    Button(
+                        onClick = { if (name.isNotBlank()) onSave(name, type) },
+                        colors = ButtonDefaults.buttonColors(containerColor = BentoAccentIndigo)
+                    ) { Text("Simpan") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AdjustOdoDialog(
+    currentOdo: Double,
+    onDismiss: () -> Unit,
+    onSave: (Double) -> Unit
+) {
+    var odoStr by remember { mutableStateOf(String.format(Locale.US, "%.0f", currentOdo)) }
+    
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = BentoCardBg),
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth().padding(8.dp)
+        ) {
+            Column(modifier = Modifier.padding(24.dp)) {
+                Text("Sesuaikan Odometer", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = BentoTextPrimary, modifier = Modifier.padding(bottom = 16.dp))
+                OutlinedTextField(
+                    value = odoStr,
+                    onValueChange = { odoStr = it },
+                    label = { Text("Odometer Terkini (km)", color = BentoTextSecondary) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = BentoTextPrimary,
+                        unfocusedTextColor = BentoTextPrimary,
+                        focusedBorderColor = BentoAccentIndigo,
+                        unfocusedBorderColor = BentoCardBorder
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+                Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                    TextButton(onClick = onDismiss) { Text("Batal", color = BentoTextSecondary) }
+                    Button(
+                        onClick = { 
+                            val o = odoStr.toDoubleOrNull()
+                            if (o != null) onSave(o)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = BentoAccentIndigo)
+                    ) { Text("Simpan") }
                 }
             }
         }

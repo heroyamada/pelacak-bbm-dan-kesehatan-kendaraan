@@ -1,0 +1,6 @@
+{
+  "name": "Pelacak BBM & Kesehatan Kendaraan",
+  "description": "Aplikasi pencatatan konsumsi BBM harian, pengingat jadwal servis otomatis, pemeliharaan oli, ban, serta analisis statistik biaya dan efisiensi kendaraan.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

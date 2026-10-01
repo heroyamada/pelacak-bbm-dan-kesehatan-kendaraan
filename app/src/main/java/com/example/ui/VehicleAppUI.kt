@@ -205,6 +205,7 @@ fun VehicleAppUI() {
                 )
             }
 
+            // Dialogs
             if (showEditVehicleDialog && activeProfile != null) {
                 AddVehicleDialog(
                     initialName = activeProfile.name,
@@ -223,22 +224,18 @@ fun VehicleAppUI() {
                     onDismissRequest = { showDeleteVehicleDialog = false },
                     containerColor = BentoCardBg,
                     title = { Text("Hapus Kendaraan", color = BentoTextPrimary) },
-                    text = { Text("Apakah Anda yakin ingin menghapus profil '${activeProfile.name}'? Semua data servis dan BBM akan hilang.", color = BentoTextSecondary) },
+                    text = { Text("Yakin hapus profil '${activeProfile.name}'?", color = BentoTextSecondary) },
                     confirmButton = {
                         TextButton(onClick = {
                             val newProfiles = profiles.filter { it.id != activeProfile.id }
-                            if (newProfiles.isEmpty()) {
-                                profiles = listOf(com.example.data.VehicleProfile(name = "Kendaraan Baru", type = "Roda 2"))
-                            } else {
-                                profiles = newProfiles
-                            }
+                            profiles = newProfiles.ifEmpty { listOf(com.example.data.VehicleProfile(name = "Baru", type = "Roda 2")) }
                             storage.saveProfiles(profiles)
                             activeProfileId = profiles.first().id
                             showDeleteVehicleDialog = false
                         }) { Text("Hapus", color = BentoRose) }
                     },
                     dismissButton = {
-                        TextButton(onClick = { showDeleteVehicleDialog = false }) { Text("Batal", color = BentoTextPrimary) }
+                        TextButton(onClick = { showDeleteVehicleDialog = false }) { Text("Batal") }
                     }
                 )
             }
@@ -252,7 +249,7 @@ fun VehicleAppUI() {
                     }
                 )
             }
-            // Dialogs
+
             if (showAddFuelDialog) {
                 AddFuelDialog(
                     currentOdo = state.currentOdometer,
@@ -432,25 +429,24 @@ fun HeaderSection(
                         ) {
                             profiles.forEach { profile ->
                                 DropdownMenuItem(
+                                    text = { Text(profile.name, color = BentoTextPrimary) },
+                                    onClick = { 
+                                        onProfileSelected(profile.id)
+                                        expanded = false
+                                    }
+                                )
+                            }
+                            DropdownMenuItem(
                                 text = { Text("Edit Profil Saat Ini", color = BentoTextSecondary) },
-                                onClick = { 
-                                    onEditProfile()
-                                    expanded = false
-                                }
+                                onClick = { onEditProfile(); expanded = false }
                             )
                             DropdownMenuItem(
                                 text = { Text("Hapus Profil Saat Ini", color = BentoRose) },
-                                onClick = { 
-                                    onDeleteProfile()
-                                    expanded = false
-                                }
+                                onClick = { onDeleteProfile(); expanded = false }
                             )
                             DropdownMenuItem(
                                 text = { Text("+ Tambah Kendaraan Baru", color = BentoAccentIndigo) },
-                                onClick = { 
-                                    onAddProfile()
-                                    expanded = false
-                                }
+                                onClick = { onAddProfile(); expanded = false }
                             )
                         }
                     }
@@ -533,7 +529,6 @@ fun BottomNavigationBar(selectedTab: AppTab, onTabSelected: (AppTab) -> Unit) {
 // -------------------- TAB 1: DASHBOARD (RINGKASAN) --------------------
 @Composable
 fun DashboardTab(
-    onConfigureVisibility: () -> Unit,
     state: VehicleState,
     onNavigateToTab: (AppTab) -> Unit,
     onAddFuelClick: () -> Unit
@@ -699,7 +694,7 @@ fun DashboardTab(
         )
 
         // Oil Health Card
-        Componentif (state.visibility.showOil) { HealthCard(
+        ComponentHealthCard(
             title = "Oli Mesin",
             subtitle = state.oilBrand,
             elapsed = oilElapsed,
@@ -710,7 +705,7 @@ fun DashboardTab(
             lastLoggedMessage = "Terakhir diganti pada ${formatOdo(state.oilLastChangeOdo)}",
             icon = Icons.Default.Settings,
             barColor = if (oilDue) BentoRose else if (oilRemaining <= 1500) BentoAmber else BentoEmerald
-        ) }
+        )
 
         // Tires Health Card
         ComponentHealthCard(
@@ -727,7 +722,7 @@ fun DashboardTab(
         )
 
         // General Service Card
-        Componentif (state.visibility.showGeneralService) { HealthCard(
+        ComponentHealthCard(
             title = "Servis Umum Berkala",
             subtitle = "Sistem Engine, Rem & Elektrikal",
             elapsed = serviceElapsed,
@@ -738,7 +733,7 @@ fun DashboardTab(
             lastLoggedMessage = "Servis terakhir pada ${formatOdo(state.generalServiceLastOdo)}",
             icon = Icons.Default.Build,
             barColor = if (serviceDue) BentoRose else if (serviceRemaining <= 2000) BentoAmber else BentoEmerald
-        ) }
+        )
 
         // Quick Actions Row
         Row(
@@ -1565,8 +1560,7 @@ fun MaintenanceTab(
     onDeleteServiceLog: (String) -> Unit
 ) {
     var showOilConfigDialog by remember { mutableStateOf(false) }
-    var showTireConfigDialog by remember { mutableStateOf(false) }
-    var activeTireIdForConfig by remember { mutableStateOf("") }
+    var showTireConfigDialog by remember { mutableStateOf(false) }\n    var activeTireIdForConfig by remember { mutableStateOf("") }
     var showServiceConfigDialog by remember { mutableStateOf(false) }
 
     LazyColumn(
@@ -2505,8 +2499,6 @@ fun ServiceConfigDialog(
 
 @Composable
 fun AddVehicleDialog(
-    initialName: String = "",
-    initialType: String = "Roda 2",
     onDismiss: () -> Unit,
     onSave: (String, String) -> Unit
 ) {
@@ -2577,8 +2569,7 @@ fun AdjustOdoDialog(
             modifier = Modifier.fillMaxWidth().padding(8.dp)
         ) {
             Column(modifier = Modifier.padding(24.dp)) {
-                Text("Sesuaikan Odometer", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = BentoTextPrimary, modifier = Modifier.padding(bottom = 8.dp))
-                Text("Masukkan angka odometer terkini dalam kilometer (km) untuk menyelaraskan indikator kendaraan.", color = BentoTextSecondary, fontSize = 14.sp, modifier = Modifier.padding(bottom = 16.dp))
+                Text("Sesuaikan Odometer", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = BentoTextPrimary, modifier = Modifier.padding(bottom = 8.dp))\n                Text("Masukkan angka odometer terkini dalam kilometer (km) untuk menyelaraskan indikator kendaraan.", color = BentoTextSecondary, fontSize = 14.sp, modifier = Modifier.padding(bottom = 16.dp))
                 OutlinedTextField(
                     value = odoStr,
                     onValueChange = { odoStr = it },
@@ -2609,7 +2600,7 @@ fun AdjustOdoDialog(
 
 @Composable
 fun DashboardVisibilityDialog(
-    state: VehicleState,
+    state: com.example.data.VehicleState,
     onDismiss: () -> Unit,
     onSave: (com.example.data.DashboardVisibility, List<com.example.data.TireState>) -> Unit
 ) {

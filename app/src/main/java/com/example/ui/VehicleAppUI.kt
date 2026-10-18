@@ -1011,7 +1011,7 @@ fun FuelTankMonitorCard(
                 verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(verticalAlignment = Alignment.Baseline) {
+                Row(verticalAlignment = Alignment.Bottom) {
                     Text(
                         text = formatDecimal(status.remainingLiters),
                         fontSize = 32.sp,

@@ -105,8 +105,7 @@ class VehicleStorage(context: Context) {
     fun loadProfiles(): List<VehicleProfile> {
         if (!file.exists()) {
             val type = "Roda 2"
-            val defaultCap = if (type == "Roda 4") 45.0 else 4.2
-            return listOf(VehicleProfile(name = "Kendaraan Utamaku", type = type, tankCapacity = defaultCap, state = VehicleState(tires = createDefaultTires(type))))
+            return listOf(VehicleProfile(name = "Kendaraan Utamaku", type = type, tankCapacity = 0.0, state = VehicleState(tires = createDefaultTires(type))))
         }
         return try {
             val content = file.readText()
@@ -118,8 +117,7 @@ class VehicleStorage(context: Context) {
                 val id = pJson.optString("id", UUID.randomUUID().toString())
                 val name = pJson.optString("name", "Kendaraan")
                 val type = pJson.optString("type", "Roda 2")
-                val defaultCap = if (type == "Roda 4") 45.0 else 4.2
-                val tankCapacity = pJson.optDouble("tankCapacity", defaultCap)
+                val tankCapacity = pJson.optDouble("tankCapacity", 0.0)
                 
                 var state = VehicleState(tires = createDefaultTires(type))
                 if (pJson.has("state")) {
@@ -225,10 +223,10 @@ class VehicleStorage(context: Context) {
                 
                 result.add(VehicleProfile(id = id, name = name, type = type, tankCapacity = tankCapacity, state = state))
             }
-            if (result.isEmpty()) listOf(VehicleProfile(name = "Kendaraan Utamaku", type = "Roda 2", tankCapacity = 4.2, state = VehicleState(tires = createDefaultTires("Roda 2")))) else result
+            if (result.isEmpty()) listOf(VehicleProfile(name = "Kendaraan Utamaku", type = "Roda 2", tankCapacity = 0.0, state = VehicleState(tires = createDefaultTires("Roda 2")))) else result
         } catch (e: Exception) {
             e.printStackTrace()
-            listOf(VehicleProfile(name = "Kendaraan Utamaku", type = "Roda 2", tankCapacity = 4.2, state = VehicleState(tires = createDefaultTires("Roda 2"))))
+            listOf(VehicleProfile(name = "Kendaraan Utamaku", type = "Roda 2", tankCapacity = 0.0, state = VehicleState(tires = createDefaultTires("Roda 2"))))
         }
     }
 }

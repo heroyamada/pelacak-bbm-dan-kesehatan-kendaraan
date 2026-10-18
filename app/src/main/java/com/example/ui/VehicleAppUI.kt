@@ -16,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -362,6 +363,34 @@ fun formatDecimal(num: Double): String {
 fun formatOdo(odo: Double): String {
     val df = DecimalFormat("#,###")
     return df.format(odo) + " km"
+}
+
+fun formatDateIndo(dateStr: String): String {
+    return try {
+        val sdfIn = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val date = sdfIn.parse(dateStr)
+        if (date != null) {
+            SimpleDateFormat("d MMMM yyyy", Locale("id", "ID")).format(date)
+        } else {
+            dateStr
+        }
+    } catch (e: Exception) {
+        dateStr
+    }
+}
+
+fun formatMonthIndo(monthStr: String): String {
+    return try {
+        val sdfIn = SimpleDateFormat("yyyy-MM", Locale.getDefault())
+        val date = sdfIn.parse(monthStr)
+        if (date != null) {
+            SimpleDateFormat("MMMM yyyy", Locale("id", "ID")).format(date)
+        } else {
+            monthStr
+        }
+    } catch (e: Exception) {
+        monthStr
+    }
 }
 
 // Prepopulate initial realistic sample data
@@ -1422,6 +1451,15 @@ fun StatisticsTab(state: VehicleState) {
         calculateEfficiencies(state.fuelLogs)
     }
 
+    val currentMonthKey = remember { SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date()) }
+    val availableMonths = remember(state.fuelLogs, currentMonthKey) {
+        val months = state.fuelLogs.mapNotNull {
+            if (it.date.length >= 7) it.date.substring(0, 7) else null
+        }.distinct().sortedDescending()
+        if (months.contains(currentMonthKey)) months else (listOf(currentMonthKey) + months)
+    }
+    var selectedMonthKey by remember { mutableStateOf(currentMonthKey) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1517,6 +1555,294 @@ fun StatisticsTab(state: VehicleState) {
                     }
                 } else {
                     MonthlyExpenseBarChart(fuelLogsByMonth)
+                }
+            }
+        }
+
+        // 2b. Daily fuel transactions breakdown for this month
+        Card(
+            colors = CardDefaults.cardColors(containerColor = BentoCardBg),
+            shape = RoundedCornerShape(24.dp),
+            border = BorderStroke(1.dp, BentoCardBorder),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Rincian Transaksi per Tanggal",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = BentoTextPrimary
+                        )
+                        Text(
+                            text = "Catatan pengisian BBM pada ${formatMonthIndo(selectedMonthKey)}",
+                            fontSize = 12.sp,
+                            color = BentoTextSecondary
+                        )
+                    }
+                    Surface(
+                        color = BentoAccentIndigoLight,
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            text = if (selectedMonthKey == currentMonthKey) "Bulan Ini" else formatMonthIndo(selectedMonthKey),
+                            color = BentoAccentIndigo,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+
+                // Month selector chips if more than 1 month available
+                if (availableMonths.size > 1) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        availableMonths.forEach { monthKey ->
+                            val isSelected = monthKey == selectedMonthKey
+                            val labelText = if (monthKey == currentMonthKey) "${formatMonthIndo(monthKey)} (Bulan Ini)" else formatMonthIndo(monthKey)
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { selectedMonthKey = monthKey },
+                                label = { Text(labelText, fontSize = 11.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = BentoAccentIndigo,
+                                    selectedLabelColor = Color.White
+                                )
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Monthly Summary stats pills
+                val selectedMonthLogs = remember(state.fuelLogs, selectedMonthKey) {
+                    state.fuelLogs.filter { it.date.startsWith(selectedMonthKey) }.sortedByDescending { it.date }
+                }
+                val monthTotalCost = selectedMonthLogs.sumOf { it.totalCost }
+                val monthTotalLiters = selectedMonthLogs.sumOf { it.liters }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Surface(
+                        color = BentoCardBorder.copy(alpha = 0.35f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text("Total Biaya", fontSize = 10.sp, color = BentoTextMuted)
+                            Text(
+                                text = formatIdr(monthTotalCost),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = BentoTextPrimary
+                            )
+                        }
+                    }
+
+                    Surface(
+                        color = BentoCardBorder.copy(alpha = 0.35f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text("Total Liter", fontSize = 10.sp, color = BentoTextMuted)
+                            Text(
+                                text = "${formatDecimal(monthTotalLiters)} L",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = BentoTextPrimary
+                            )
+                        }
+                    }
+
+                    Surface(
+                        color = BentoCardBorder.copy(alpha = 0.35f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(0.9f)
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text("Frekuensi", fontSize = 10.sp, color = BentoTextMuted)
+                            Text(
+                                text = "${selectedMonthLogs.size}x Isi",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = BentoTextPrimary
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                if (selectedMonthLogs.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 20.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                imageVector = Icons.Default.LocalGasStation,
+                                contentDescription = null,
+                                tint = BentoTextMuted,
+                                modifier = Modifier.size(36.dp)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Belum ada transaksi pengisian BBM di bulan ini.",
+                                fontSize = 13.sp,
+                                color = BentoTextSecondary,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                } else {
+                    val logsByDate = remember(selectedMonthLogs) {
+                        selectedMonthLogs.groupBy { it.date }
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        logsByDate.forEach { (date, logsForDate) ->
+                            val dayTotalCost = logsForDate.sumOf { it.totalCost }
+                            val dayTotalLiters = logsForDate.sumOf { it.liters }
+
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                // Date Header with Subtotal
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Surface(
+                                        color = BentoAccentIndigo.copy(alpha = 0.15f),
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Text(
+                                            text = formatDateIndo(date),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = BentoAccentIndigo,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                        )
+                                    }
+                                    Text(
+                                        text = "${formatIdr(dayTotalCost)} (${formatDecimal(dayTotalLiters)} L)",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = BentoTextSecondary
+                                    )
+                                }
+
+                                // Transactions on this date
+                                logsForDate.forEach { log ->
+                                    val fuelBadgeColor = when (log.fuelType) {
+                                        "Pertalite" -> BentoEmerald
+                                        "Pertamax" -> Color(0xFF3B82F6)
+                                        "Pertamax Turbo" -> Color(0xFF8B5CF6)
+                                        "Solar" -> BentoAmber
+                                        "Dexlite" -> Color(0xFFEC4899)
+                                        else -> BentoTextSecondary
+                                    }
+                                    val fuelBgColor = when (log.fuelType) {
+                                        "Pertalite" -> BentoEmeraldBg
+                                        "Pertamax" -> Color(0x183B82F6)
+                                        "Pertamax Turbo" -> Color(0x188B5CF6)
+                                        "Solar" -> BentoAmberBg
+                                        "Dexlite" -> Color(0x18EC4899)
+                                        else -> BentoCardBorder.copy(alpha = 0.2f)
+                                    }
+
+                                    Surface(
+                                        color = BentoCardBorder.copy(alpha = 0.25f),
+                                        shape = RoundedCornerShape(12.dp),
+                                        border = BorderStroke(1.dp, BentoCardBorder.copy(alpha = 0.4f)),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Surface(
+                                                    color = fuelBgColor,
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    modifier = Modifier.size(34.dp)
+                                                ) {
+                                                    Box(contentAlignment = Alignment.Center) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.LocalGasStation,
+                                                            contentDescription = null,
+                                                            tint = fuelBadgeColor,
+                                                            modifier = Modifier.size(18.dp)
+                                                        )
+                                                    }
+                                                }
+                                                Spacer(modifier = Modifier.width(10.dp))
+                                                Column {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        Text(
+                                                            text = log.fuelType,
+                                                            fontWeight = FontWeight.Bold,
+                                                            fontSize = 13.sp,
+                                                            color = BentoTextPrimary
+                                                        )
+                                                        if (log.isFullTank) {
+                                                            Spacer(modifier = Modifier.width(6.dp))
+                                                            Surface(
+                                                                color = BentoEmeraldBg,
+                                                                shape = RoundedCornerShape(4.dp)
+                                                            ) {
+                                                                Text(
+                                                                    text = "Full",
+                                                                    fontSize = 9.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = BentoEmerald,
+                                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                    Spacer(modifier = Modifier.height(2.dp))
+                                                    Text(
+                                                        text = "${formatDecimal(log.liters)} L • ${formatIdr(log.pricePerLiter)}/L • Odo: ${formatOdo(log.odometer)}",
+                                                        fontSize = 11.sp,
+                                                        color = BentoTextSecondary
+                                                    )
+                                                }
+                                            }
+                                            Text(
+                                                text = formatIdr(log.totalCost),
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp,
+                                                color = BentoTextPrimary,
+                                                modifier = Modifier.padding(start = 8.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

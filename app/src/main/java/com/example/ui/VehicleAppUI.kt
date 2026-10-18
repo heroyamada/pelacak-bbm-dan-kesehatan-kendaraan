@@ -393,6 +393,32 @@ fun formatMonthIndo(monthStr: String): String {
     }
 }
 
+fun getPreviousMonth(monthKey: String): String {
+    return try {
+        val sdf = SimpleDateFormat("yyyy-MM", Locale.getDefault())
+        val cal = Calendar.getInstance()
+        val date = sdf.parse(monthKey)
+        if (date != null) cal.time = date
+        cal.add(Calendar.MONTH, -1)
+        sdf.format(cal.time)
+    } catch (e: Exception) {
+        monthKey
+    }
+}
+
+fun getNextMonth(monthKey: String): String {
+    return try {
+        val sdf = SimpleDateFormat("yyyy-MM", Locale.getDefault())
+        val cal = Calendar.getInstance()
+        val date = sdf.parse(monthKey)
+        if (date != null) cal.time = date
+        cal.add(Calendar.MONTH, 1)
+        sdf.format(cal.time)
+    } catch (e: Exception) {
+        monthKey
+    }
+}
+
 // Prepopulate initial realistic sample data
 fun getSampleData(): VehicleState {
     return VehicleState(
@@ -1600,9 +1626,73 @@ fun StatisticsTab(state: VehicleState) {
                     }
                 }
 
+                // Month Navigation Bar with Previous (<) and Next (>) buttons
+                Spacer(modifier = Modifier.height(12.dp))
+                Surface(
+                    color = BentoCardBorder.copy(alpha = 0.25f),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, BentoCardBorder.copy(alpha = 0.4f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        IconButton(
+                            onClick = { selectedMonthKey = getPreviousMonth(selectedMonthKey) },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ChevronLeft,
+                                contentDescription = "Bulan Sebelumnya",
+                                tint = BentoTextPrimary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = formatMonthIndo(selectedMonthKey),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = BentoTextPrimary
+                            )
+                            if (selectedMonthKey == currentMonthKey) {
+                                Text(
+                                    text = "Bulan Berjalan (Otomatis)",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = BentoEmerald
+                                )
+                            } else {
+                                Text(
+                                    text = "Kembali ke Bulan Ini",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = BentoAccentIndigo,
+                                    modifier = Modifier.clickable { selectedMonthKey = currentMonthKey }
+                                )
+                            }
+                        }
+
+                        IconButton(
+                            onClick = { selectedMonthKey = getNextMonth(selectedMonthKey) },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = "Bulan Berikutnya",
+                                tint = BentoTextPrimary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
+                }
+
                 // Month selector chips if more than 1 month available
                 if (availableMonths.size > 1) {
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1705,11 +1795,20 @@ fun StatisticsTab(state: VehicleState) {
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "Belum ada transaksi pengisian BBM di bulan ini.",
+                                text = "Belum ada transaksi pengisian BBM pada bulan ${formatMonthIndo(selectedMonthKey)}.",
                                 fontSize = 13.sp,
                                 color = BentoTextSecondary,
                                 textAlign = TextAlign.Center
                             )
+                            if (selectedMonthKey != currentMonthKey) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                TextButton(
+                                    onClick = { selectedMonthKey = currentMonthKey },
+                                    colors = ButtonDefaults.textButtonColors(contentColor = BentoAccentIndigo)
+                                ) {
+                                    Text("Kembali ke Bulan Ini (${formatMonthIndo(currentMonthKey)})", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
                         }
                     }
                 } else {

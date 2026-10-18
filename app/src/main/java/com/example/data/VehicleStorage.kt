@@ -18,6 +18,7 @@ class VehicleStorage(context: Context) {
                 pJson.put("id", profile.id)
                 pJson.put("name", profile.name)
                 pJson.put("type", profile.type)
+                pJson.put("tankCapacity", profile.tankCapacity)
 
                 val state = profile.state
                 val sJson = JSONObject()
@@ -31,6 +32,7 @@ class VehicleStorage(context: Context) {
                 val visJson = JSONObject()
                 visJson.put("showOil", state.visibility.showOil)
                 visJson.put("showGeneralService", state.visibility.showGeneralService)
+                visJson.put("showFuelTank", state.visibility.showFuelTank)
                 sJson.put("visibility", visJson)
 
                 val tireArray = JSONArray()
@@ -56,6 +58,7 @@ class VehicleStorage(context: Context) {
                     fJson.put("liters", log.liters)
                     fJson.put("pricePerLiter", log.pricePerLiter)
                     fJson.put("fuelType", log.fuelType)
+                    fJson.put("isFullTank", log.isFullTank)
                     fuelArray.put(fJson)
                 }
                 sJson.put("fuelLogs", fuelArray)
@@ -102,7 +105,8 @@ class VehicleStorage(context: Context) {
     fun loadProfiles(): List<VehicleProfile> {
         if (!file.exists()) {
             val type = "Roda 2"
-            return listOf(VehicleProfile(name = "Kendaraan Utamaku", type = type, state = VehicleState(tires = createDefaultTires(type))))
+            val defaultCap = if (type == "Roda 4") 45.0 else 4.2
+            return listOf(VehicleProfile(name = "Kendaraan Utamaku", type = type, tankCapacity = defaultCap, state = VehicleState(tires = createDefaultTires(type))))
         }
         return try {
             val content = file.readText()
@@ -114,6 +118,8 @@ class VehicleStorage(context: Context) {
                 val id = pJson.optString("id", UUID.randomUUID().toString())
                 val name = pJson.optString("name", "Kendaraan")
                 val type = pJson.optString("type", "Roda 2")
+                val defaultCap = if (type == "Roda 4") 45.0 else 4.2
+                val tankCapacity = pJson.optDouble("tankCapacity", defaultCap)
                 
                 var state = VehicleState(tires = createDefaultTires(type))
                 if (pJson.has("state")) {
@@ -130,7 +136,8 @@ class VehicleStorage(context: Context) {
                         val vJson = json.getJSONObject("visibility")
                         visibility = DashboardVisibility(
                             showOil = vJson.optBoolean("showOil", true),
-                            showGeneralService = vJson.optBoolean("showGeneralService", true)
+                            showGeneralService = vJson.optBoolean("showGeneralService", true),
+                            showFuelTank = vJson.optBoolean("showFuelTank", true)
                         )
                     }
 
@@ -174,7 +181,8 @@ class VehicleStorage(context: Context) {
                                     odometer = fJson.optDouble("odometer", 0.0),
                                     liters = fJson.optDouble("liters", 0.0),
                                     pricePerLiter = fJson.optDouble("pricePerLiter", 0.0),
-                                    fuelType = fJson.optString("fuelType", "Pertalite")
+                                    fuelType = fJson.optString("fuelType", "Pertalite"),
+                                    isFullTank = fJson.optBoolean("isFullTank", true)
                                 )
                             )
                         }
@@ -215,12 +223,12 @@ class VehicleStorage(context: Context) {
                     )
                 }
                 
-                result.add(VehicleProfile(id = id, name = name, type = type, state = state))
+                result.add(VehicleProfile(id = id, name = name, type = type, tankCapacity = tankCapacity, state = state))
             }
-            if (result.isEmpty()) listOf(VehicleProfile(name = "Kendaraan Utamaku", type = "Roda 2", state = VehicleState(tires = createDefaultTires("Roda 2")))) else result
+            if (result.isEmpty()) listOf(VehicleProfile(name = "Kendaraan Utamaku", type = "Roda 2", tankCapacity = 4.2, state = VehicleState(tires = createDefaultTires("Roda 2")))) else result
         } catch (e: Exception) {
             e.printStackTrace()
-            listOf(VehicleProfile(name = "Kendaraan Utamaku", type = "Roda 2", state = VehicleState(tires = createDefaultTires("Roda 2"))))
+            listOf(VehicleProfile(name = "Kendaraan Utamaku", type = "Roda 2", tankCapacity = 4.2, state = VehicleState(tires = createDefaultTires("Roda 2"))))
         }
     }
 }

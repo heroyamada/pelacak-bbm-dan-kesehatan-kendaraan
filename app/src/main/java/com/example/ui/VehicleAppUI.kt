@@ -151,8 +151,10 @@ fun VehicleAppUI() {
             when (selectedTab) {
                 AppTab.DASHBOARD -> DashboardTab(
                     state = state,
+                    profile = activeProfile,
                     onNavigateToTab = { selectedTab = it },
                     onAddFuelClick = { showAddFuelDialog = true },
+                    onAdjustOdo = { showAdjustOdoDialog = true },
                     onConfigureVisibility = { showVisibilityDialog = true }
                 )
                 AppTab.STATISTICS -> StatisticsTab(state = state)
@@ -173,6 +175,8 @@ fun VehicleAppUI() {
                 )
                 AppTab.MAINTENANCE -> MaintenanceTab(
                     state = state,
+                    profile = activeProfile,
+                    onEditProfile = { showEditVehicleDialog = true },
                     onSaveConfig = { updatedState ->
                         saveActiveState(updatedState)
                     },
@@ -186,8 +190,9 @@ fun VehicleAppUI() {
 
             if (showAddVehicleDialog) {
                 AddVehicleDialog(
+                    title = "Tambah Kendaraan Baru",
                     onDismiss = { showAddVehicleDialog = false },
-                    onSave = { name, type ->
+                    onSave = { name, type, tankCapacity ->
                         val initialTires = if (type == "Roda 4") {
                             listOf(
                                 com.example.data.TireState("FL", "Ban Depan Kiri"),
@@ -201,7 +206,12 @@ fun VehicleAppUI() {
                                 com.example.data.TireState("R", "Ban Belakang")
                             )
                         }
-                        val newProfile = VehicleProfile(name = name, type = type, state = com.example.data.VehicleState(tires = initialTires))
+                        val newProfile = VehicleProfile(
+                            name = name,
+                            type = type,
+                            tankCapacity = tankCapacity,
+                            state = com.example.data.VehicleState(tires = initialTires)
+                        )
                         profiles = profiles + newProfile
                         storage.saveProfiles(profiles)
                         activeProfileId = newProfile.id
@@ -223,11 +233,13 @@ fun VehicleAppUI() {
             // Dialogs
             if (showEditVehicleDialog && activeProfile != null) {
                 AddVehicleDialog(
+                    title = "Edit Profil Kendaraan",
                     initialName = activeProfile.name,
                     initialType = activeProfile.type,
+                    initialTankCapacity = activeProfile.tankCapacity,
                     onDismiss = { showEditVehicleDialog = false },
-                    onSave = { name, type ->
-                        val updated = activeProfile.copy(name = name, type = type)
+                    onSave = { name, type, tankCapacity ->
+                        val updated = activeProfile.copy(name = name, type = type, tankCapacity = tankCapacity)
                         profiles = profiles.map { if (it.id == updated.id) updated else it }
                         storage.saveProfiles(profiles)
                         showEditVehicleDialog = false
@@ -245,7 +257,7 @@ fun VehicleAppUI() {
                             val newProfiles = profiles.filter { it.id != activeProfile.id }
                             profiles = newProfiles.ifEmpty { 
                                 val defaultTires = listOf(com.example.data.TireState("F", "Ban Depan"), com.example.data.TireState("R", "Ban Belakang"))
-                                listOf(com.example.data.VehicleProfile(name = "Kendaraan Baru", type = "Roda 2", state = com.example.data.VehicleState(tires = defaultTires)))
+                                listOf(com.example.data.VehicleProfile(name = "Kendaraan Baru", type = "Roda 2", tankCapacity = 4.2, state = com.example.data.VehicleState(tires = defaultTires)))
                             }
                             storage.saveProfiles(profiles)
                             activeProfileId = profiles.first().id
@@ -270,14 +282,16 @@ fun VehicleAppUI() {
             if (showAddFuelDialog) {
                 AddFuelDialog(
                     currentOdo = state.currentOdometer,
+                    tankCapacity = activeProfile?.tankCapacity ?: (if (activeProfile?.type == "Roda 4") 45.0 else 4.2),
                     onDismiss = { showAddFuelDialog = false },
-                    onSave = { date, odo, liters, price, fuelType ->
+                    onSave = { date, odo, liters, price, fuelType, isFullTank ->
                         val newLog = FuelLog(
                             date = date,
                             odometer = odo,
                             liters = liters,
                             pricePerLiter = price,
-                            fuelType = fuelType
+                            fuelType = fuelType,
+                            isFullTank = isFullTank
                         )
                         val updatedLogs = (state.fuelLogs + newLog).sortedBy { it.odometer }
                         val finalOdo = maxOf(state.currentOdometer, odo)
@@ -353,11 +367,11 @@ fun formatOdo(odo: Double): String {
 fun getSampleData(): VehicleState {
     return VehicleState(
         fuelLogs = listOf(
-            FuelLog(id = "1", date = "2026-05-10", odometer = 10000.0, liters = 35.0, pricePerLiter = 10000.0, fuelType = "Pertalite"),
-            FuelLog(id = "2", date = "2026-05-25", odometer = 10450.0, liters = 32.0, pricePerLiter = 12500.0, fuelType = "Pertamax"),
-            FuelLog(id = "3", date = "2026-06-12", odometer = 10920.0, liters = 34.0, pricePerLiter = 12500.0, fuelType = "Pertamax"),
-            FuelLog(id = "4", date = "2026-06-28", odometer = 11390.0, liters = 33.0, pricePerLiter = 12500.0, fuelType = "Pertamax"),
-            FuelLog(id = "5", date = "2026-07-15", odometer = 11870.0, liters = 35.0, pricePerLiter = 14500.0, fuelType = "Pertamax Turbo")
+            FuelLog(id = "1", date = "2026-05-10", odometer = 10000.0, liters = 35.0, pricePerLiter = 10000.0, fuelType = "Pertalite", isFullTank = true),
+            FuelLog(id = "2", date = "2026-05-25", odometer = 10450.0, liters = 32.0, pricePerLiter = 12500.0, fuelType = "Pertamax", isFullTank = true),
+            FuelLog(id = "3", date = "2026-06-12", odometer = 10920.0, liters = 34.0, pricePerLiter = 12500.0, fuelType = "Pertamax", isFullTank = true),
+            FuelLog(id = "4", date = "2026-06-28", odometer = 11390.0, liters = 33.0, pricePerLiter = 12500.0, fuelType = "Pertamax", isFullTank = true),
+            FuelLog(id = "5", date = "2026-07-15", odometer = 11870.0, liters = 35.0, pricePerLiter = 14500.0, fuelType = "Pertamax Turbo", isFullTank = true)
         ),
         serviceLogs = listOf(
             ServiceLog(id = "s1", date = "2026-05-10", type = "Ganti Oli", odometer = 10000.0, cost = 350000.0, notes = "Ganti oli mesin Shell Helix Ultra 10W-40"),
@@ -389,6 +403,70 @@ fun calculateEfficiencies(fuelLogs: List<FuelLog>): List<Double> {
         }
     }
     return efficiencies
+}
+
+data class FuelTankStatus(
+    val tankCapacity: Double,
+    val remainingLiters: Double,
+    val percentage: Float,
+    val estimatedRangeKm: Double,
+    val distanceSinceLastRefuel: Double,
+    val consumedSinceLast: Double,
+    val avgEfficiency: Double,
+    val isLowFuel: Boolean,
+    val hasLogs: Boolean
+)
+
+fun calculateFuelTankStatus(profile: VehicleProfile): FuelTankStatus {
+    val capacity = if (profile.tankCapacity > 0.0) profile.tankCapacity else (if (profile.type == "Roda 4") 45.0 else 4.2)
+    val fuelLogs = profile.state.fuelLogs.sortedBy { it.odometer }
+    val currentOdo = profile.state.currentOdometer
+
+    val efficiencies = calculateEfficiencies(fuelLogs).filter { it > 0.0 }
+    val defaultEff = if (profile.type == "Roda 2") 40.0 else 12.0
+    val eff = if (efficiencies.isNotEmpty()) efficiencies.average() else defaultEff
+
+    if (fuelLogs.isEmpty()) {
+        return FuelTankStatus(
+            tankCapacity = capacity,
+            remainingLiters = capacity,
+            percentage = 1.0f,
+            estimatedRangeKm = capacity * eff,
+            distanceSinceLastRefuel = 0.0,
+            consumedSinceLast = 0.0,
+            avgEfficiency = eff,
+            isLowFuel = false,
+            hasLogs = false
+        )
+    }
+
+    var currentLevel = if (fuelLogs.first().isFullTank) capacity else minOf(capacity, fuelLogs.first().liters)
+    for (i in 1 until fuelLogs.size) {
+        val dist = maxOf(0.0, fuelLogs[i].odometer - fuelLogs[i - 1].odometer)
+        val consumed = if (eff > 0.0) dist / eff else 0.0
+        currentLevel = maxOf(0.0, currentLevel - consumed)
+        currentLevel = if (fuelLogs[i].isFullTank) capacity else minOf(capacity, currentLevel + fuelLogs[i].liters)
+    }
+
+    val lastLog = fuelLogs.last()
+    val distSinceLast = maxOf(0.0, currentOdo - lastLog.odometer)
+    val consumedSinceLast = if (eff > 0.0) distSinceLast / eff else 0.0
+    val remainingLiters = maxOf(0.0, minOf(capacity, currentLevel - consumedSinceLast))
+    val percentage = if (capacity > 0.0) (remainingLiters / capacity).toFloat().coerceIn(0f, 1f) else 0f
+    val estimatedRangeKm = remainingLiters * eff
+    val isLowFuel = percentage <= 0.20f || remainingLiters <= (if (profile.type == "Roda 2") 1.0 else 7.0)
+
+    return FuelTankStatus(
+        tankCapacity = capacity,
+        remainingLiters = remainingLiters,
+        percentage = percentage,
+        estimatedRangeKm = estimatedRangeKm,
+        distanceSinceLastRefuel = distSinceLast,
+        consumedSinceLast = consumedSinceLast,
+        avgEfficiency = eff,
+        isLowFuel = isLowFuel,
+        hasLogs = true
+    )
 }
 
 @Composable
@@ -470,12 +548,34 @@ fun HeaderSection(
                             )
                         }
                     }
-                    Text(
-                        text = "Odo: ${formatOdo(activeProfile?.state?.currentOdometer ?: 0.0)} km",
-                        fontSize = 13.sp,
-                        color = BentoTextSecondary,
-                        modifier = Modifier.clickable { onAdjustOdo() }
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 2.dp)
+                    ) {
+                        Text(
+                            text = "Odo: ${formatOdo(activeProfile?.state?.currentOdometer ?: 0.0)}",
+                            fontSize = 13.sp,
+                            color = BentoTextSecondary,
+                            modifier = Modifier.clickable { onAdjustOdo() }
+                        )
+                        if (activeProfile != null) {
+                            val fuelStatus = calculateFuelTankStatus(activeProfile)
+                            Text(" • ", fontSize = 13.sp, color = BentoTextMuted)
+                            Icon(
+                                imageVector = Icons.Default.LocalGasStation,
+                                contentDescription = null,
+                                tint = if (fuelStatus.isLowFuel) BentoRose else BentoEmerald,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = "${formatDecimal(fuelStatus.remainingLiters)} L (${(fuelStatus.percentage * 100).toInt()}%)",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (fuelStatus.isLowFuel) BentoRose else BentoEmerald
+                            )
+                        }
+                    }
                 }
                 Row {
                     IconButton(onClick = onToggleTheme) {
@@ -555,11 +655,16 @@ fun BottomNavigationBar(selectedTab: AppTab, onTabSelected: (AppTab) -> Unit) {
 @Composable
 fun DashboardTab(
     state: VehicleState,
+    profile: VehicleProfile?,
     onNavigateToTab: (AppTab) -> Unit,
     onAddFuelClick: () -> Unit,
+    onAdjustOdo: () -> Unit,
     onConfigureVisibility: () -> Unit
 ) {
     val scrollState = rememberScrollState()
+
+    val currentProfile = profile ?: VehicleProfile(name = "Kendaraan", type = "Roda 2", state = state)
+    val fuelTankStatus = calculateFuelTankStatus(currentProfile)
 
     // Calculate core stats
     val fuelLogs = state.fuelLogs
@@ -651,6 +756,15 @@ fun DashboardTab(
                     )
                 }
             }
+        }
+
+        // Fuel Tank Realtime Monitoring Card
+        if (state.visibility.showFuelTank) {
+            FuelTankMonitorCard(
+                status = fuelTankStatus,
+                onAddFuelClick = onAddFuelClick,
+                onAdjustOdo = onAdjustOdo
+            )
         }
 
         // Stats Row Card
@@ -805,6 +919,215 @@ fun DashboardTab(
                 Icon(Icons.Default.Build, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("Atur Servis", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+fun FuelTankMonitorCard(
+    status: FuelTankStatus,
+    onAddFuelClick: () -> Unit,
+    onAdjustOdo: () -> Unit
+) {
+    val barColor = when {
+        status.isLowFuel -> BentoRose
+        status.percentage <= 0.40f -> BentoAmber
+        else -> BentoEmerald
+    }
+    val badgeBg = when {
+        status.isLowFuel -> BentoRoseBg
+        status.percentage <= 0.40f -> BentoAmberBg
+        else -> BentoEmeraldBg
+    }
+    val badgeText = when {
+        status.isLowFuel -> "BBM Kritis (${(status.percentage * 100).toInt()}%)"
+        status.percentage <= 0.40f -> "Perhatian (${(status.percentage * 100).toInt()}%)"
+        else -> "Aman (${(status.percentage * 100).toInt()}%)"
+    }
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = BentoCardBg),
+        shape = RoundedCornerShape(24.dp),
+        border = BorderStroke(1.dp, if (status.isLowFuel) BentoRose.copy(alpha = 0.5f) else BentoCardBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(18.dp)) {
+            // Header Row
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Surface(
+                    color = badgeBg,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.size(42.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.LocalGasStation,
+                            contentDescription = "Fuel Tank",
+                            tint = barColor,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Sisa Bahan Bakar di Tangki",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = BentoTextPrimary
+                    )
+                    Text(
+                        text = if (status.hasLogs) "Jarak sejak isi: ${formatOdo(status.distanceSinceLastRefuel)}" else "Belum ada catatan BBM",
+                        fontSize = 12.sp,
+                        color = BentoTextSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Surface(
+                    color = badgeBg,
+                    shape = RoundedCornerShape(20.dp)
+                ) {
+                    Text(
+                        text = badgeText,
+                        color = barColor,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Main Liters Display & Estimation
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.Baseline) {
+                    Text(
+                        text = formatDecimal(status.remainingLiters),
+                        fontSize = 32.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = BentoTextPrimary
+                    )
+                    Text(
+                        text = " / ${formatDecimal(status.tankCapacity)} L",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = BentoTextSecondary,
+                        modifier = Modifier.padding(start = 4.dp)
+                    )
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = "Estimasi Jarak",
+                        fontSize = 11.sp,
+                        color = BentoTextMuted
+                    )
+                    Text(
+                        text = "~${formatDecimal(status.estimatedRangeKm)} km",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (status.isLowFuel) BentoRose else BentoAccentIndigo
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Visual Tank Bar with Gauge notches (E, 1/4, 1/2, 3/4, F)
+            Column(modifier = Modifier.fillMaxWidth()) {
+                LinearProgressIndicator(
+                    progress = { status.percentage },
+                    color = barColor,
+                    trackColor = BentoCardBorder,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(10.dp)
+                        .background(Color.Transparent, RoundedCornerShape(5.dp))
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("E (Kosong)", fontSize = 10.sp, color = BentoTextMuted)
+                    Text("1/4", fontSize = 10.sp, color = BentoTextMuted)
+                    Text("1/2", fontSize = 10.sp, color = BentoTextMuted)
+                    Text("3/4", fontSize = 10.sp, color = BentoTextMuted)
+                    Text("F (Penuh)", fontSize = 10.sp, color = BentoTextMuted)
+                }
+            }
+
+            if (status.isLowFuel) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Surface(
+                    color = BentoRoseBg,
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, BentoRose.copy(alpha = 0.3f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = BentoRose,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "BBM menipis! Sisa estimasi tempuh ${formatDecimal(status.estimatedRangeKm)} km. Segera isi bensin.",
+                            fontSize = 12.sp,
+                            color = BentoRose,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+
+            Divider(modifier = Modifier.padding(vertical = 12.dp), color = BentoCardBorder)
+
+            // Micro stats row & Action
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("Terpakai: ${formatDecimal(status.consumedSinceLast)} L", fontSize = 12.sp, color = BentoTextSecondary)
+                    Text("Konsumsi: ${formatDecimal(status.avgEfficiency)} km/L", fontSize = 12.sp, color = BentoTextSecondary)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(
+                        onClick = onAdjustOdo,
+                        colors = ButtonDefaults.textButtonColors(contentColor = BentoAccentIndigo)
+                    ) {
+                        Icon(Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Update Odo", fontSize = 12.sp)
+                    }
+                    Button(
+                        onClick = onAddFuelClick,
+                        colors = ButtonDefaults.buttonColors(containerColor = BentoAccentIndigo, contentColor = Color.White),
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Default.LocalGasStation, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Isi BBM", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
         }
     }
@@ -1536,14 +1859,32 @@ fun FuelLogItemCard(
                 
                 Row(
                     horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(
-                        text = "${formatDecimal(log.liters)} L • ${log.fuelType}",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = BentoTextSecondary
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "${formatDecimal(log.liters)} L • ${log.fuelType}",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = BentoTextSecondary
+                        )
+                        if (log.isFullTank) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                color = BentoAccentIndigoLight,
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text(
+                                    text = "Full Tank",
+                                    fontSize = 10.sp,
+                                    color = BentoAccentIndigo,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
                     Text(
                         text = formatOdo(log.odometer),
                         fontSize = 13.sp,
@@ -1595,6 +1936,8 @@ fun FuelLogItemCard(
 @Composable
 fun MaintenanceTab(
     state: VehicleState,
+    profile: VehicleProfile? = null,
+    onEditProfile: () -> Unit = {},
     onSaveConfig: (VehicleState) -> Unit,
     onDeleteServiceLog: (String) -> Unit
 ) {
@@ -1615,6 +1958,21 @@ fun MaintenanceTab(
                 fontWeight = FontWeight.Bold,
                 fontSize = 18.sp,
                 color = BentoTextPrimary
+            )
+        }
+
+        // Fuel Tank Config
+        item {
+            val cap = profile?.tankCapacity ?: (if (profile?.type == "Roda 4") 45.0 else 4.2)
+            MaintenanceConfigCard(
+                title = "Kapasitas Tangki BBM",
+                subtitle = "Digunakan untuk memonitoring sisa BBM di tangki secara presisi",
+                details = listOf(
+                    "Jenis Kendaraan" to (profile?.type ?: "Roda 2"),
+                    "Kapasitas Tangki" to "${formatDecimal(cap)} Liter",
+                    "Status Monitoring" to if (state.visibility.showFuelTank) "Aktif di Dashboard" else "Nonaktif"
+                ),
+                onClickEdit = onEditProfile
             )
         }
 
@@ -1957,13 +2315,15 @@ fun ServiceHistoryCard(
 @Composable
 fun AddFuelDialog(
     currentOdo: Double,
+    tankCapacity: Double = 45.0,
     onDismiss: () -> Unit,
-    onSave: (date: String, odo: Double, liters: Double, price: Double, fuelType: String) -> Unit
+    onSave: (date: String, odo: Double, liters: Double, price: Double, fuelType: String, isFullTank: Boolean) -> Unit
 ) {
     var odoInput by remember { mutableStateOf(if (currentOdo > 0.0) String.format(Locale.US, "%.0f", currentOdo + 350.0) else "") }
     var litersInput by remember { mutableStateOf("") }
     var priceInput by remember { mutableStateOf("") }
     var selectedFuelType by remember { mutableStateOf("Pertalite") }
+    var isFullTank by remember { mutableStateOf(true) }
     var dateInput by remember {
         val today = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
         mutableStateOf(today)
@@ -2070,6 +2430,31 @@ fun AddFuelDialog(
                     }
                 }
 
+                // Full Tank Switch/Checkbox
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { isFullTank = !isFullTank }
+                        .padding(vertical = 4.dp)
+                ) {
+                    Checkbox(
+                        checked = isFullTank,
+                        onCheckedChange = { isFullTank = it },
+                        colors = CheckboxDefaults.colors(checkedColor = BentoAccentIndigo, uncheckedColor = BentoTextSecondary)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text("Isi Penuh Tangki (Full Tank)", color = BentoTextPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            if (isFullTank) "Tangki terisi penuh (~${formatDecimal(tankCapacity)} L). Akurasi monitor sisa BBM maksimal."
+                            else "Pengisian sebagian (hanya menambah liter)",
+                            color = BentoTextSecondary,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
                 // Action Buttons
                 Row(
                     horizontalArrangement = Arrangement.End,
@@ -2088,7 +2473,7 @@ fun AddFuelDialog(
                             val price = priceInput.toDoubleOrNull() ?: 0.0
                             
                             if (odo > 0 && liters > 0 && price > 0 && dateInput.isNotEmpty()) {
-                                onSave(dateInput, odo, liters, price, selectedFuelType)
+                                onSave(dateInput, odo, liters, price, selectedFuelType, isFullTank)
                             }
                         },
                         enabled = odoInput.isNotEmpty() && litersInput.isNotEmpty() && priceInput.isNotEmpty(),
@@ -2543,13 +2928,18 @@ fun ServiceConfigDialog(
 
 @Composable
 fun AddVehicleDialog(
+    title: String = "Tambah Kendaraan",
     initialName: String = "",
     initialType: String = "Roda 2",
+    initialTankCapacity: Double = if (initialType == "Roda 4") 45.0 else 4.2,
     onDismiss: () -> Unit,
-    onSave: (String, String) -> Unit
+    onSave: (name: String, type: String, tankCapacity: Double) -> Unit
 ) {
     var name by remember { mutableStateOf(initialName) }
     var type by remember { mutableStateOf(initialType) }
+    var tankCapacityStr by remember { 
+        mutableStateOf(if (initialTankCapacity > 0.0) String.format(Locale.US, "%.1f", initialTankCapacity).trimEnd('0').trimEnd('.') else "") 
+    }
     
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -2557,8 +2947,13 @@ fun AddVehicleDialog(
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.fillMaxWidth().padding(8.dp)
         ) {
-            Column(modifier = Modifier.padding(24.dp)) {
-                Text("Tambah Kendaraan", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = BentoTextPrimary, modifier = Modifier.padding(bottom = 16.dp))
+            Column(
+                modifier = Modifier
+                    .padding(24.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text(title, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = BentoTextPrimary, modifier = Modifier.padding(bottom = 16.dp))
+                
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -2569,29 +2964,70 @@ fun AddVehicleDialog(
                         focusedBorderColor = BentoAccentIndigo,
                         unfocusedBorderColor = BentoCardBorder
                     ),
+                    singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                
                 Spacer(modifier = Modifier.height(16.dp))
                 Text("Jenis Kendaraan", color = BentoTextSecondary, fontSize = 14.sp)
                 Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
                         selected = type == "Roda 2",
-                        onClick = { type = "Roda 2" },
-                        label = { Text("Roda 2") },
+                        onClick = { 
+                            val prevDefault = if (type == "Roda 4") "45" else "4.2"
+                            if (tankCapacityStr.isEmpty() || tankCapacityStr == prevDefault || tankCapacityStr == "45.0") {
+                                tankCapacityStr = "4.2"
+                            }
+                            type = "Roda 2" 
+                        },
+                        label = { Text("Roda 2 (Motor)") },
                         colors = FilterChipDefaults.filterChipColors(selectedContainerColor = BentoAccentIndigo, selectedLabelColor = Color.White)
                     )
                     FilterChip(
                         selected = type == "Roda 4",
-                        onClick = { type = "Roda 4" },
-                        label = { Text("Roda 4") },
+                        onClick = { 
+                            val prevDefault = if (type == "Roda 2") "4.2" else "45"
+                            if (tankCapacityStr.isEmpty() || tankCapacityStr == prevDefault || tankCapacityStr == "4.2") {
+                                tankCapacityStr = "45"
+                            }
+                            type = "Roda 4" 
+                        },
+                        label = { Text("Roda 4 (Mobil)") },
                         colors = FilterChipDefaults.filterChipColors(selectedContainerColor = BentoAccentIndigo, selectedLabelColor = Color.White)
                     )
                 }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = tankCapacityStr,
+                    onValueChange = { tankCapacityStr = it },
+                    label = { Text("Kapasitas Tangki (Liter)", color = BentoTextSecondary) },
+                    placeholder = { Text(if (type == "Roda 2") "Contoh: 4.2" else "Contoh: 45.0") },
+                    supportingText = {
+                        Text("Digunakan untuk memantau sisa bbm di tangki secara presisi berdasarkan odometer terbaru.", fontSize = 11.sp, color = BentoTextMuted)
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = BentoTextPrimary,
+                        unfocusedTextColor = BentoTextPrimary,
+                        focusedBorderColor = BentoAccentIndigo,
+                        unfocusedBorderColor = BentoCardBorder
+                    ),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
                 Spacer(modifier = Modifier.height(24.dp))
                 Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
                     TextButton(onClick = onDismiss) { Text("Batal", color = BentoTextSecondary) }
+                    Spacer(modifier = Modifier.width(8.dp))
                     Button(
-                        onClick = { if (name.isNotBlank()) onSave(name, type) },
+                        onClick = { 
+                            val cap = tankCapacityStr.toDoubleOrNull() ?: (if (type == "Roda 4") 45.0 else 4.2)
+                            if (name.isNotBlank() && cap > 0.0) {
+                                onSave(name, type, cap)
+                            }
+                        },
+                        enabled = name.isNotBlank() && (tankCapacityStr.toDoubleOrNull() ?: 0.0) > 0.0,
                         colors = ButtonDefaults.buttonColors(containerColor = BentoAccentIndigo)
                     ) { Text("Simpan") }
                 }
@@ -2654,6 +3090,7 @@ fun DashboardVisibilityDialog(
 ) {
     var showOil by remember { mutableStateOf(state.visibility.showOil) }
     var showGeneralService by remember { mutableStateOf(state.visibility.showGeneralService) }
+    var showFuelTank by remember { mutableStateOf(state.visibility.showFuelTank) }
     var tires by remember { mutableStateOf(state.tires) }
     
     Dialog(onDismissRequest = onDismiss) {
@@ -2666,6 +3103,10 @@ fun DashboardVisibilityDialog(
                 Text("Pilih Card yang Ditampilkan", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = BentoTextPrimary, modifier = Modifier.padding(bottom = 16.dp))
                 LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
                     item {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = showFuelTank, onCheckedChange = { showFuelTank = it }, colors = CheckboxDefaults.colors(checkedColor = BentoAccentIndigo, uncheckedColor = BentoTextSecondary))
+                            Text("Monitoring Sisa Tangki BBM", color = BentoTextPrimary)
+                        }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = showOil, onCheckedChange = { showOil = it }, colors = CheckboxDefaults.colors(checkedColor = BentoAccentIndigo, uncheckedColor = BentoTextSecondary))
                             Text("Oli Mesin", color = BentoTextPrimary)
@@ -2688,7 +3129,7 @@ fun DashboardVisibilityDialog(
                 Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
                     TextButton(onClick = onDismiss) { Text("Batal", color = BentoTextSecondary) }
                     Button(
-                        onClick = { onSave(com.example.data.DashboardVisibility(showOil, showGeneralService), tires) },
+                        onClick = { onSave(com.example.data.DashboardVisibility(showOil, showGeneralService, showFuelTank), tires) },
                         colors = ButtonDefaults.buttonColors(containerColor = BentoAccentIndigo)
                     ) { Text("Simpan") }
                 }

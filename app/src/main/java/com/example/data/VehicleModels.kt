@@ -8,7 +8,8 @@ data class FuelLog(
     val odometer: Double,          // km
     val liters: Double,            // L
     val pricePerLiter: Double,     // Rp per liter
-    val fuelType: String          // e.g. "Pertalite", "Pertamax", "Solar", "Pertamax Turbo"
+    val fuelType: String,          // e.g. "Pertalite", "Pertamax", "Solar", "Pertamax Turbo"
+    val isFullTank: Boolean = true
 ) {
     val totalCost: Double
         get() = liters * pricePerLiter
@@ -35,7 +36,8 @@ data class TireState(
 
 data class DashboardVisibility(
     val showOil: Boolean = true,
-    val showGeneralService: Boolean = true
+    val showGeneralService: Boolean = true,
+    val showFuelTank: Boolean = true
 )
 
 data class VehicleState(
@@ -60,5 +62,6 @@ data class VehicleProfile(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
     val type: String, // "Roda 2" or "Roda 4"
+    val tankCapacity: Double = if (type == "Roda 4") 45.0 else 4.2,
     val state: VehicleState = VehicleState()
 )

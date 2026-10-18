@@ -1183,37 +1183,88 @@ fun FuelTankMonitorCard(
                 }
             }
 
-            Divider(modifier = Modifier.padding(vertical = 12.dp), color = BentoCardBorder)
+            Divider(modifier = Modifier.padding(vertical = 14.dp), color = BentoCardBorder)
 
-            // Micro stats row & Action
+            // Micro stats summary row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
-                    Text("Terpakai: ${formatDecimal(status.consumedSinceLast)} L", fontSize = 12.sp, color = BentoTextSecondary)
-                    Text("Konsumsi: ${formatDecimal(status.avgEfficiency)} km/L", fontSize = 12.sp, color = BentoTextSecondary)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.LocalGasStation,
+                        contentDescription = null,
+                        tint = BentoTextSecondary,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Terpakai: ${formatDecimal(status.consumedSinceLast)} L",
+                        fontSize = 12.sp,
+                        color = BentoTextSecondary
+                    )
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(
-                        onClick = onAdjustOdo,
-                        colors = ButtonDefaults.textButtonColors(contentColor = BentoAccentIndigo)
-                    ) {
-                        Icon(Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Update Odo", fontSize = 12.sp)
-                    }
-                    Button(
-                        onClick = onAddFuelClick,
-                        colors = ButtonDefaults.buttonColors(containerColor = BentoAccentIndigo, contentColor = Color.White),
-                        shape = RoundedCornerShape(12.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Icon(Icons.Default.LocalGasStation, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Isi BBM", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.ShowChart,
+                        contentDescription = null,
+                        tint = BentoTextSecondary,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Konsumsi: ${formatDecimal(status.avgEfficiency)} km/L",
+                        fontSize = 12.sp,
+                        color = BentoTextSecondary
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Action Buttons: Update Odo & Isi BBM with equal weight & proper height
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(
+                    onClick = onAdjustOdo,
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, BentoCardBorder),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = BentoTextPrimary),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp)
+                ) {
+                    Icon(Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(16.dp), tint = BentoAccentIndigo)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Update Odo",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1
+                    )
+                }
+                Button(
+                    onClick = onAddFuelClick,
+                    colors = ButtonDefaults.buttonColors(containerColor = BentoAccentIndigo, contentColor = Color.White),
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp)
+                ) {
+                    Icon(Icons.Default.LocalGasStation, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Isi BBM",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
                 }
             }
         }

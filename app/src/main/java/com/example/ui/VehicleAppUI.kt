@@ -419,6 +419,64 @@ fun getNextMonth(monthKey: String): String {
     }
 }
 
+enum class StatsFilterMode(val label: String) {
+    MONTH("Bulan"),
+    YEAR("Tahun"),
+    DATE_RANGE("Rentang Tanggal"),
+    ALL("Semua")
+}
+
+val INDO_MONTHS = listOf(
+    "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+    "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+)
+
+val INDO_MONTHS_SHORT = listOf(
+    "Jan", "Feb", "Mar", "Apr", "Mei", "Jun",
+    "Jul", "Agu", "Sep", "Okt", "Nov", "Des"
+)
+
+fun parseYearFromMonthKey(monthKey: String): Int {
+    return try {
+        monthKey.split("-")[0].toInt()
+    } catch (e: Exception) {
+        Calendar.getInstance().get(Calendar.YEAR)
+    }
+}
+
+fun parseMonthIndexFromMonthKey(monthKey: String): Int {
+    return try {
+        monthKey.split("-")[1].toInt()
+    } catch (e: Exception) {
+        Calendar.getInstance().get(Calendar.MONTH) + 1
+    }
+}
+
+fun buildMonthKey(year: Int, monthIndex: Int): String {
+    return String.format(Locale.US, "%04d-%02d", year, monthIndex.coerceIn(1, 12))
+}
+
+fun getDaysAgoDate(days: Int): String {
+    val cal = Calendar.getInstance()
+    cal.add(Calendar.DAY_OF_YEAR, -days)
+    return SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(cal.time)
+}
+
+fun getStartOfMonthDate(monthKey: String): String = "$monthKey-01"
+
+fun getEndOfMonthDate(monthKey: String): String {
+    return try {
+        val sdf = SimpleDateFormat("yyyy-MM", Locale.getDefault())
+        val cal = Calendar.getInstance()
+        val date = sdf.parse(monthKey)
+        if (date != null) cal.time = date
+        val maxDay = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
+        String.format(Locale.US, "%s-%02d", monthKey, maxDay)
+    } catch (e: Exception) {
+        "$monthKey-28"
+    }
+}
+
 // Prepopulate initial realistic sample data
 fun getSampleData(): VehicleState {
     return VehicleState(
@@ -1447,44 +1505,134 @@ fun ComponentHealthCard(
 @Composable
 fun StatisticsTab(state: VehicleState) {
     val scrollState = rememberScrollState()
-    
-    // Group fuel logs by month
-    val fuelLogsByMonth = remember(state.fuelLogs) {
-        val groups = LinkedHashMap<String, MutableList<FuelLog>>()
-        val sdfIn = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-        val sdfOut = SimpleDateFormat("MMM yy", Locale.getDefault())
-        
-        for (log in state.fuelLogs) {
-            try {
-                val date = sdfIn.parse(log.date)
-                val monthStr = if (date != null) sdfOut.format(date) else "Unknown"
-                if (!groups.containsKey(monthStr)) {
-                    groups[monthStr] = mutableListOf()
-                }
-                groups[monthStr]?.add(log)
-            } catch (e: Exception) {
-                if (!groups.containsKey("Unknown")) {
-                    groups["Unknown"] = mutableListOf()
-                }
-                groups["Unknown"]?.add(log)
-            }
-        }
-        groups
-    }
 
-    // Efficiencies list for line graph
-    val efficiencies = remember(state.fuelLogs) {
-        calculateEfficiencies(state.fuelLogs)
-    }
+    // Filter states
+    var filterMode by remember { mutableStateOf(StatsFilterMode.MONTH) }
+    val currentCal = remember { Calendar.getInstance() }
+    val currentYear = remember { currentCal.get(Calendar.YEAR) }
+    val currentMonthKey = remember { SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(currentCal.time) }
+    val currentToday = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(currentCal.time) }
 
-    val currentMonthKey = remember { SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date()) }
+    var selectedMonthKey by remember { mutableStateOf(currentMonthKey) }
+    var selectedYear by remember { mutableStateOf(currentYear) }
+    var startDateInput by remember { mutableStateOf(getDaysAgoDate(30)) }
+    var endDateInput by remember { mutableStateOf(currentToday) }
+
+    var showMonthYearDialog by remember { mutableStateOf(false) }
+    var showDateRangeDialog by remember { mutableStateOf(false) }
+
+    // Toggle inside cards
+    var showAllTimeEff by remember { mutableStateOf(false) }
+    var expenseViewMode by remember { mutableStateOf("HARIAN") } // "HARIAN" vs "BULANAN"
+
+    // Available months & years from data
     val availableMonths = remember(state.fuelLogs, currentMonthKey) {
         val months = state.fuelLogs.mapNotNull {
             if (it.date.length >= 7) it.date.substring(0, 7) else null
         }.distinct().sortedDescending()
         if (months.contains(currentMonthKey)) months else (listOf(currentMonthKey) + months)
     }
-    var selectedMonthKey by remember { mutableStateOf(currentMonthKey) }
+
+    val availableYears = remember(state.fuelLogs, currentYear) {
+        val years = state.fuelLogs.mapNotNull {
+            if (it.date.length >= 4) it.date.substring(0, 4).toIntOrNull() else null
+        }.distinct().sortedDescending()
+        if (years.contains(currentYear)) years else (listOf(currentYear) + years).distinct().sortedDescending()
+    }
+
+    // Active period label
+    val activePeriodLabel = remember(filterMode, selectedMonthKey, selectedYear, startDateInput, endDateInput) {
+        when (filterMode) {
+            StatsFilterMode.MONTH -> formatMonthIndo(selectedMonthKey)
+            StatsFilterMode.YEAR -> "Tahun $selectedYear"
+            StatsFilterMode.DATE_RANGE -> {
+                if (startDateInput.isNotBlank() && endDateInput.isNotBlank()) {
+                    "${formatDateIndo(startDateInput)} - ${formatDateIndo(endDateInput)}"
+                } else if (startDateInput.isNotBlank()) {
+                    "Mulai ${formatDateIndo(startDateInput)}"
+                } else if (endDateInput.isNotBlank()) {
+                    "Sampai ${formatDateIndo(endDateInput)}"
+                } else {
+                    "Rentang Tanggal"
+                }
+            }
+            StatsFilterMode.ALL -> "Semua Waktu"
+        }
+    }
+
+    // Filtered fuel logs based on active mode
+    val filteredFuelLogs = remember(state.fuelLogs, filterMode, selectedMonthKey, selectedYear, startDateInput, endDateInput) {
+        when (filterMode) {
+            StatsFilterMode.MONTH -> state.fuelLogs.filter { it.date.startsWith(selectedMonthKey) }
+            StatsFilterMode.YEAR -> state.fuelLogs.filter { it.date.startsWith("$selectedYear-") }
+            StatsFilterMode.DATE_RANGE -> state.fuelLogs.filter {
+                val startOk = startDateInput.isBlank() || it.date >= startDateInput
+                val endOk = endDateInput.isBlank() || it.date <= endDateInput
+                startOk && endOk
+            }
+            StatsFilterMode.ALL -> state.fuelLogs
+        }.sortedByDescending { it.date }
+    }
+
+    // Efficiencies calculated in full historical chronological order
+    val allEfficienciesWithLogs = remember(state.fuelLogs) {
+        val sorted = state.fuelLogs.sortedBy { it.odometer }
+        val effs = calculateEfficiencies(sorted)
+        effs.zip(sorted).filterIndexed { index, _ -> index > 0 }
+    }
+
+    // Efficiency data to display in chart
+    val displayedEffData = remember(allEfficienciesWithLogs, filteredFuelLogs, showAllTimeEff, filterMode) {
+        if (showAllTimeEff || filterMode == StatsFilterMode.ALL) {
+            allEfficienciesWithLogs
+        } else {
+            val filteredIds = filteredFuelLogs.map { it.id }.toSet()
+            allEfficienciesWithLogs.filter { filteredIds.contains(it.second.id) }
+        }
+    }
+
+    // Financial & consumption summaries
+    val totalCostInPeriod = remember(filteredFuelLogs) { filteredFuelLogs.sumOf { it.totalCost } }
+    val totalLitersInPeriod = remember(filteredFuelLogs) { filteredFuelLogs.sumOf { it.liters } }
+    val avgCostPerFill = remember(filteredFuelLogs, totalCostInPeriod) {
+        if (filteredFuelLogs.isNotEmpty()) totalCostInPeriod / filteredFuelLogs.size else 0.0
+    }
+
+    // Daily expense data for current filtered month
+    val dailyExpenseData = remember(filteredFuelLogs) {
+        filteredFuelLogs
+            .groupBy { it.date }
+            .entries
+            .sortedBy { it.key }
+            .map { (date, logs) -> date to logs.sumOf { it.totalCost } }
+    }
+
+    // Monthly expense data for year view
+    val yearlyMonthsData = remember(state.fuelLogs, selectedYear) {
+        (1..12).map { mIdx ->
+            val mKey = buildMonthKey(selectedYear, mIdx)
+            val shortName = INDO_MONTHS_SHORT[mIdx - 1]
+            val cost = state.fuelLogs.filter { it.date.startsWith(mKey) }.sumOf { it.totalCost }
+            shortName to cost
+        }
+    }
+
+    // All months summary for comparison
+    val allMonthsData = remember(state.fuelLogs) {
+        val sdfIn = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val sdfOut = SimpleDateFormat("MMM yy", Locale.getDefault())
+        val map = LinkedHashMap<String, Double>()
+        state.fuelLogs.sortedBy { it.date }.forEach { log ->
+            try {
+                val d = sdfIn.parse(log.date)
+                val key = if (d != null) sdfOut.format(d) else "Lain"
+                map[key] = (map[key] ?: 0.0) + log.totalCost
+            } catch (e: Exception) {
+                map["Lain"] = (map["Lain"] ?: 0.0) + log.totalCost
+            }
+        }
+        map.toList().takeLast(6)
+    }
 
     Column(
         modifier = Modifier
@@ -1493,14 +1641,41 @@ fun StatisticsTab(state: VehicleState) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text(
-            text = "Analisis Penggunaan & Efisiensi",
-            fontWeight = FontWeight.Bold,
-            fontSize = 18.sp,
-            color = BentoTextPrimary
-        )
+        // Top Header
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Analisis Penggunaan & Efisiensi",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = BentoTextPrimary
+                )
+                Text(
+                    text = "Periode: $activePeriodLabel",
+                    fontSize = 12.sp,
+                    color = BentoAccentIndigo,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            Surface(
+                color = BentoAccentIndigoLight,
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text(
+                    text = filterMode.label,
+                    color = BentoAccentIndigo,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                )
+            }
+        }
 
-        // 1. Efficiency line graph
+        // ==================== MASTER FILTER PERIODE FLEKSIBEL CARD ====================
         Card(
             colors = CardDefaults.cardColors(containerColor = BentoCardBg),
             shape = RoundedCornerShape(24.dp),
@@ -1508,43 +1683,355 @@ fun StatisticsTab(state: VehicleState) {
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = "Tren Efisiensi Bahan Bakar (km/L)",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    color = BentoTextPrimary
-                )
-                Text(
-                    text = "Menunjukkan tingkat keiritan bbm dari pengisian ke pengisian",
-                    fontSize = 12.sp,
-                    color = BentoTextSecondary,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Pengaturan Periode Fleksibel",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = BentoTextPrimary
+                    )
+                    Text(
+                        text = "Bulan • Tanggal • Tahun",
+                        fontSize = 11.sp,
+                        color = BentoTextMuted
+                    )
+                }
 
-                val validEffData = efficiencies.zip(state.fuelLogs).filterIndexed { index, _ -> index > 0 }
-                if (validEffData.size < 2) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(180.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "Butuh minimal 3 catatan isi bensin untuk menggambar grafik tren efisiensi harian.",
-                            fontSize = 13.sp,
-                            color = BentoTextSecondary,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 24.dp)
-                        )
+                // Mode Selector Segmented Tabs
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    StatsFilterMode.values().forEach { mode ->
+                        val isSelected = filterMode == mode
+                        val iconVector = when (mode) {
+                            StatsFilterMode.MONTH -> Icons.Default.DateRange
+                            StatsFilterMode.YEAR -> Icons.Default.Today
+                            StatsFilterMode.DATE_RANGE -> Icons.Default.Tune
+                            StatsFilterMode.ALL -> Icons.Default.History
+                        }
+                        Surface(
+                            color = if (isSelected) BentoAccentIndigo else BentoCardBorder.copy(alpha = 0.35f),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, if (isSelected) BentoAccentIndigo else BentoCardBorder.copy(alpha = 0.5f)),
+                            modifier = Modifier.clickable {
+                                filterMode = mode
+                                showAllTimeEff = false
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = iconVector,
+                                    contentDescription = null,
+                                    tint = if (isSelected) Color.White else BentoTextSecondary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = mode.label,
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) Color.White else BentoTextPrimary
+                                )
+                            }
+                        }
                     }
-                } else {
-                    EfficiencyLineChart(validEffData)
+                }
+
+                // Dynamic Controls based on selected mode
+                when (filterMode) {
+                    StatsFilterMode.MONTH -> {
+                        Surface(
+                            color = BentoCardBorder.copy(alpha = 0.25f),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, BentoCardBorder.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                IconButton(
+                                    onClick = { selectedMonthKey = getPreviousMonth(selectedMonthKey) },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ChevronLeft,
+                                        contentDescription = "Bulan Sebelumnya",
+                                        tint = BentoTextPrimary,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier.clickable { showMonthYearDialog = true }
+                                ) {
+                                    Text(
+                                        text = formatMonthIndo(selectedMonthKey),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        color = BentoTextPrimary
+                                    )
+                                    Text(
+                                        text = if (selectedMonthKey == currentMonthKey) "Bulan Berjalan (Klik ubah)" else "Ketuk untuk pilih bulan & tahun",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = if (selectedMonthKey == currentMonthKey) BentoEmerald else BentoAccentIndigo
+                                    )
+                                }
+
+                                IconButton(
+                                    onClick = { selectedMonthKey = getNextMonth(selectedMonthKey) },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ChevronRight,
+                                        contentDescription = "Bulan Berikutnya",
+                                        tint = BentoTextPrimary,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        // Quick Month Chips
+                        if (availableMonths.size > 1) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                availableMonths.forEach { monthKey ->
+                                    val isSelected = monthKey == selectedMonthKey
+                                    val labelText = if (monthKey == currentMonthKey) "${formatMonthIndo(monthKey)} (Bulan Ini)" else formatMonthIndo(monthKey)
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = { selectedMonthKey = monthKey },
+                                        label = { Text(labelText, fontSize = 11.sp) },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = BentoAccentIndigo,
+                                            selectedLabelColor = Color.White
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    StatsFilterMode.YEAR -> {
+                        Surface(
+                            color = BentoCardBorder.copy(alpha = 0.25f),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, BentoCardBorder.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                IconButton(
+                                    onClick = { selectedYear -= 1 },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ChevronLeft,
+                                        contentDescription = "Tahun Lalu",
+                                        tint = BentoTextPrimary,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = "Tahun $selectedYear",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp,
+                                        color = BentoTextPrimary
+                                    )
+                                    Text(
+                                        text = if (selectedYear == currentYear) "Tahun Berjalan" else "Riwayat Tahun",
+                                        fontSize = 10.sp,
+                                        color = if (selectedYear == currentYear) BentoEmerald else BentoTextSecondary
+                                    )
+                                }
+
+                                IconButton(
+                                    onClick = { selectedYear += 1 },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ChevronRight,
+                                        contentDescription = "Tahun Depan",
+                                        tint = BentoTextPrimary,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        // Year quick chips
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            availableYears.forEach { yr ->
+                                FilterChip(
+                                    selected = selectedYear == yr,
+                                    onClick = { selectedYear = yr },
+                                    label = { Text("Tahun $yr", fontSize = 11.sp) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = BentoAccentIndigo,
+                                        selectedLabelColor = Color.White
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    StatsFilterMode.DATE_RANGE -> {
+                        Surface(
+                            color = BentoCardBorder.copy(alpha = 0.25f),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, BentoCardBorder.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Rentang Tanggal Aktif",
+                                        fontSize = 11.sp,
+                                        color = BentoTextMuted
+                                    )
+                                    Text(
+                                        text = "${formatDateIndo(startDateInput)} s/d ${formatDateIndo(endDateInput)}",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = BentoTextPrimary
+                                    )
+                                }
+                                Button(
+                                    onClick = { showDateRangeDialog = true },
+                                    colors = ButtonDefaults.buttonColors(containerColor = BentoAccentIndigo),
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.White)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Ubah", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+
+                        // Preset Chips
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Surface(
+                                color = BentoCardBorder.copy(alpha = 0.35f),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.clickable {
+                                    startDateInput = getDaysAgoDate(7)
+                                    endDateInput = currentToday
+                                }
+                            ) {
+                                Text("7 Hari", fontSize = 11.sp, color = BentoTextPrimary, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                            }
+                            Surface(
+                                color = BentoCardBorder.copy(alpha = 0.35f),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.clickable {
+                                    startDateInput = getDaysAgoDate(30)
+                                    endDateInput = currentToday
+                                }
+                            ) {
+                                Text("30 Hari", fontSize = 11.sp, color = BentoTextPrimary, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                            }
+                            Surface(
+                                color = BentoCardBorder.copy(alpha = 0.35f),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.clickable {
+                                    startDateInput = "$currentMonthKey-01"
+                                    endDateInput = currentToday
+                                }
+                            ) {
+                                Text("Bulan Ini", fontSize = 11.sp, color = BentoTextPrimary, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                            }
+                            Surface(
+                                color = BentoCardBorder.copy(alpha = 0.35f),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.clickable {
+                                    val lastM = getPreviousMonth(currentMonthKey)
+                                    startDateInput = "$lastM-01"
+                                    endDateInput = getEndOfMonthDate(lastM)
+                                }
+                            ) {
+                                Text("Bulan Lalu", fontSize = 11.sp, color = BentoTextPrimary, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                            }
+                            Surface(
+                                color = BentoCardBorder.copy(alpha = 0.35f),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.clickable {
+                                    startDateInput = "$currentYear-01-01"
+                                    endDateInput = currentToday
+                                }
+                            ) {
+                                Text("Tahun Ini", fontSize = 11.sp, color = BentoTextPrimary, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                            }
+                        }
+                    }
+
+                    StatsFilterMode.ALL -> {
+                        Surface(
+                            color = BentoEmeraldBg,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = BentoEmerald, modifier = Modifier.size(18.dp))
+                                Text(
+                                    text = "Menampilkan semua data riwayat dari awal tanpa batasan tanggal.",
+                                    fontSize = 12.sp,
+                                    color = BentoEmerald,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
 
-        // 2. Fuel expense by month chart
+        // ==================== 1. EFFICIENCY LINE GRAPH CARD ====================
         Card(
             colors = CardDefaults.cardColors(containerColor = BentoCardBg),
             shape = RoundedCornerShape(24.dp),
@@ -1553,39 +2040,353 @@ fun StatisticsTab(state: VehicleState) {
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = "Pengeluaran Bulanan BBM",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    color = BentoTextPrimary
-                )
-                Text(
-                    text = "Total rupiah yang dihabiskan setiap bulannya",
-                    fontSize = 12.sp,
-                    color = BentoTextSecondary,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
-
-                if (fuelLogsByMonth.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(180.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Belum ada pengeluaran bbm untuk dianalisis.",
-                            fontSize = 13.sp,
+                            text = "Tren Efisiensi Bahan Bakar (km/L)",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = BentoTextPrimary
+                        )
+                        Text(
+                            text = "Menunjukkan tingkat keiritan bbm dari pengisian ke pengisian",
+                            fontSize = 12.sp,
                             color = BentoTextSecondary
                         )
                     }
+
+                    // Scope switch chip (Sesuai Filter vs Semua Riwayat)
+                    Surface(
+                        color = if (showAllTimeEff) BentoAccentIndigo else BentoCardBorder.copy(alpha = 0.3f),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.clickable { showAllTimeEff = !showAllTimeEff }
+                    ) {
+                        Text(
+                            text = if (showAllTimeEff) "Semua Riwayat" else "Sesuai Filter",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (showAllTimeEff) Color.White else BentoTextSecondary,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Highlight metrics if efficiency data exists
+                if (displayedEffData.isNotEmpty()) {
+                    val effVals = displayedEffData.map { it.first }
+                    val avgEff = effVals.average()
+                    val maxEff = effVals.maxOrNull() ?: 0.0
+                    val minEff = effVals.minOrNull() ?: 0.0
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Surface(
+                            color = BentoAccentIndigoLight,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Text("Rata-rata", fontSize = 10.sp, color = BentoTextMuted)
+                                Text(
+                                    text = String.format(Locale.US, "%.1f km/L", avgEff),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = BentoAccentIndigo
+                                )
+                            }
+                        }
+                        Surface(
+                            color = BentoEmeraldBg,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Text("Paling Irit", fontSize = 10.sp, color = BentoTextMuted)
+                                Text(
+                                    text = String.format(Locale.US, "%.1f km/L", maxEff),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = BentoEmerald
+                                )
+                            }
+                        }
+                        Surface(
+                            color = BentoAmberBg,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Text("Paling Boros", fontSize = 10.sp, color = BentoTextMuted)
+                                Text(
+                                    text = String.format(Locale.US, "%.1f km/L", minEff),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = BentoAmber
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+
+                if (displayedEffData.size < 2) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(horizontal = 24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ShowChart,
+                                contentDescription = null,
+                                tint = BentoTextMuted,
+                                modifier = Modifier.size(36.dp)
+                            )
+                            Text(
+                                text = "Tercatat ${displayedEffData.size} titik efisiensi pada ${if (showAllTimeEff) "semua riwayat" else activePeriodLabel}.",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = BentoTextPrimary,
+                                textAlign = TextAlign.Center
+                            )
+                            Text(
+                                text = "Grafik garis tren membutuhkan minimal 2 titik perbandingan (3 pengisian bensin).",
+                                fontSize = 11.sp,
+                                color = BentoTextSecondary,
+                                textAlign = TextAlign.Center
+                            )
+
+                            if (!showAllTimeEff && allEfficienciesWithLogs.size >= 2) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Button(
+                                    onClick = { showAllTimeEff = true },
+                                    colors = ButtonDefaults.buttonColors(containerColor = BentoAccentIndigo),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Text(
+                                        text = "Lihat Tren Semua Riwayat (${allEfficienciesWithLogs.size} Titik)",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                        }
+                    }
                 } else {
-                    MonthlyExpenseBarChart(fuelLogsByMonth)
+                    EfficiencyLineChart(displayedEffData)
                 }
             }
         }
 
-        // 2b. Daily fuel transactions breakdown for this month
+        // ==================== 2. FUEL EXPENSE BAR CHART CARD ====================
+        Card(
+            colors = CardDefaults.cardColors(containerColor = BentoCardBg),
+            shape = RoundedCornerShape(24.dp),
+            border = BorderStroke(1.dp, BentoCardBorder),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Pengeluaran BBM",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = BentoTextPrimary
+                        )
+                        Text(
+                            text = "Total rupiah yang dihabiskan pada $activePeriodLabel",
+                            fontSize = 12.sp,
+                            color = BentoTextSecondary
+                        )
+                    }
+
+                    // If in MONTH mode, provide Harian vs Bulanan toggle
+                    if (filterMode == StatsFilterMode.MONTH) {
+                        Surface(
+                            color = BentoCardBorder.copy(alpha = 0.35f),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Row(modifier = Modifier.padding(2.dp)) {
+                                Surface(
+                                    color = if (expenseViewMode == "HARIAN") BentoAccentIndigo else Color.Transparent,
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.clickable { expenseViewMode = "HARIAN" }
+                                ) {
+                                    Text(
+                                        text = "Harian",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (expenseViewMode == "HARIAN") Color.White else BentoTextSecondary,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                                Surface(
+                                    color = if (expenseViewMode == "BULANAN") BentoAccentIndigo else Color.Transparent,
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.clickable { expenseViewMode = "BULANAN" }
+                                ) {
+                                    Text(
+                                        text = "Bulanan",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (expenseViewMode == "BULANAN") Color.White else BentoTextSecondary,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Summary stats pills
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Surface(
+                        color = BentoCardBorder.copy(alpha = 0.35f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text("Total Biaya", fontSize = 10.sp, color = BentoTextMuted)
+                            Text(
+                                text = formatIdr(totalCostInPeriod),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = BentoTextPrimary
+                            )
+                        }
+                    }
+
+                    Surface(
+                        color = BentoCardBorder.copy(alpha = 0.35f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text("Total Liter", fontSize = 10.sp, color = BentoTextMuted)
+                            Text(
+                                text = "${formatDecimal(totalLitersInPeriod)} L",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = BentoTextPrimary
+                            )
+                        }
+                    }
+
+                    Surface(
+                        color = BentoCardBorder.copy(alpha = 0.35f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text("Rata-rata/Isi", fontSize = 10.sp, color = BentoTextMuted)
+                            Text(
+                                text = formatIdr(avgCostPerFill),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = BentoTextPrimary
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Render Bar Chart based on mode
+                when {
+                    filterMode == StatsFilterMode.MONTH && expenseViewMode == "HARIAN" -> {
+                        if (dailyExpenseData.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(180.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = "Belum ada transaksi pada ${formatMonthIndo(selectedMonthKey)}.",
+                                        fontSize = 13.sp,
+                                        color = BentoTextSecondary
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    TextButton(onClick = { filterMode = StatsFilterMode.ALL }) {
+                                        Text("Lihat Pengeluaran Semua Bulan", color = BentoAccentIndigo, fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        } else {
+                            DailyExpenseBarChart(dailyExpenseData)
+                        }
+                    }
+
+                    filterMode == StatsFilterMode.YEAR -> {
+                        val hasYearData = yearlyMonthsData.any { it.second > 0 }
+                        if (!hasYearData) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(180.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "Belum ada catatan pengeluaran di tahun $selectedYear.",
+                                    fontSize = 13.sp,
+                                    color = BentoTextSecondary
+                                )
+                            }
+                        } else {
+                            MonthlyExpenseBarChart(yearlyMonthsData)
+                        }
+                    }
+
+                    else -> {
+                        // Month with Bulanan view or Date Range or All Time
+                        if (allMonthsData.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(180.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "Belum ada pengeluaran bbm untuk dianalisis.",
+                                    fontSize = 13.sp,
+                                    color = BentoTextSecondary
+                                )
+                            }
+                        } else {
+                            MonthlyExpenseBarChart(allMonthsData)
+                        }
+                    }
+                }
+            }
+        }
+
+        // ==================== 3. DAILY FUEL TRANSACTIONS BREAKDOWN CARD ====================
         Card(
             colors = CardDefaults.cardColors(containerColor = BentoCardBg),
             shape = RoundedCornerShape(24.dp),
@@ -1607,7 +2408,7 @@ fun StatisticsTab(state: VehicleState) {
                             color = BentoTextPrimary
                         )
                         Text(
-                            text = "Catatan pengisian BBM pada ${formatMonthIndo(selectedMonthKey)}",
+                            text = "Catatan pengisian BBM pada $activePeriodLabel",
                             fontSize = 12.sp,
                             color = BentoTextSecondary
                         )
@@ -1617,7 +2418,7 @@ fun StatisticsTab(state: VehicleState) {
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Text(
-                            text = if (selectedMonthKey == currentMonthKey) "Bulan Ini" else formatMonthIndo(selectedMonthKey),
+                            text = "${filteredFuelLogs.size}x Isi",
                             color = BentoAccentIndigo,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
@@ -1626,164 +2427,13 @@ fun StatisticsTab(state: VehicleState) {
                     }
                 }
 
-                // Month Navigation Bar with Previous (<) and Next (>) buttons
-                Spacer(modifier = Modifier.height(12.dp))
-                Surface(
-                    color = BentoCardBorder.copy(alpha = 0.25f),
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, BentoCardBorder.copy(alpha = 0.4f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        IconButton(
-                            onClick = { selectedMonthKey = getPreviousMonth(selectedMonthKey) },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ChevronLeft,
-                                contentDescription = "Bulan Sebelumnya",
-                                tint = BentoTextPrimary,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = formatMonthIndo(selectedMonthKey),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                color = BentoTextPrimary
-                            )
-                            if (selectedMonthKey == currentMonthKey) {
-                                Text(
-                                    text = "Bulan Berjalan (Otomatis)",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = BentoEmerald
-                                )
-                            } else {
-                                Text(
-                                    text = "Kembali ke Bulan Ini",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = BentoAccentIndigo,
-                                    modifier = Modifier.clickable { selectedMonthKey = currentMonthKey }
-                                )
-                            }
-                        }
-
-                        IconButton(
-                            onClick = { selectedMonthKey = getNextMonth(selectedMonthKey) },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ChevronRight,
-                                contentDescription = "Bulan Berikutnya",
-                                tint = BentoTextPrimary,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-                    }
-                }
-
-                // Month selector chips if more than 1 month available
-                if (availableMonths.size > 1) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        availableMonths.forEach { monthKey ->
-                            val isSelected = monthKey == selectedMonthKey
-                            val labelText = if (monthKey == currentMonthKey) "${formatMonthIndo(monthKey)} (Bulan Ini)" else formatMonthIndo(monthKey)
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = { selectedMonthKey = monthKey },
-                                label = { Text(labelText, fontSize = 11.sp) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = BentoAccentIndigo,
-                                    selectedLabelColor = Color.White
-                                )
-                            )
-                        }
-                    }
-                }
-
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Monthly Summary stats pills
-                val selectedMonthLogs = remember(state.fuelLogs, selectedMonthKey) {
-                    state.fuelLogs.filter { it.date.startsWith(selectedMonthKey) }.sortedByDescending { it.date }
-                }
-                val monthTotalCost = selectedMonthLogs.sumOf { it.totalCost }
-                val monthTotalLiters = selectedMonthLogs.sumOf { it.liters }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Surface(
-                        color = BentoCardBorder.copy(alpha = 0.35f),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
-                            Text("Total Biaya", fontSize = 10.sp, color = BentoTextMuted)
-                            Text(
-                                text = formatIdr(monthTotalCost),
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = BentoTextPrimary
-                            )
-                        }
-                    }
-
-                    Surface(
-                        color = BentoCardBorder.copy(alpha = 0.35f),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
-                            Text("Total Liter", fontSize = 10.sp, color = BentoTextMuted)
-                            Text(
-                                text = "${formatDecimal(monthTotalLiters)} L",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = BentoTextPrimary
-                            )
-                        }
-                    }
-
-                    Surface(
-                        color = BentoCardBorder.copy(alpha = 0.35f),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.weight(0.9f)
-                    ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
-                            Text("Frekuensi", fontSize = 10.sp, color = BentoTextMuted)
-                            Text(
-                                text = "${selectedMonthLogs.size}x Isi",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = BentoTextPrimary
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                if (selectedMonthLogs.isEmpty()) {
+                if (filteredFuelLogs.isEmpty()) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 20.dp),
+                            .padding(vertical = 24.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1795,26 +2445,37 @@ fun StatisticsTab(state: VehicleState) {
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "Belum ada transaksi pengisian BBM pada bulan ${formatMonthIndo(selectedMonthKey)}.",
+                                text = "Belum ada transaksi pengisian BBM pada periode $activePeriodLabel.",
                                 fontSize = 13.sp,
                                 color = BentoTextSecondary,
                                 textAlign = TextAlign.Center
                             )
-                            if (selectedMonthKey != currentMonthKey) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                TextButton(
-                                    onClick = { selectedMonthKey = currentMonthKey },
-                                    colors = ButtonDefaults.textButtonColors(contentColor = BentoAccentIndigo)
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (filterMode != StatsFilterMode.MONTH || selectedMonthKey != currentMonthKey) {
+                                    Button(
+                                        onClick = {
+                                            filterMode = StatsFilterMode.MONTH
+                                            selectedMonthKey = currentMonthKey
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = BentoAccentIndigo),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Text("Kembali ke Bulan Ini", fontSize = 11.sp, color = Color.White)
+                                    }
+                                }
+                                Button(
+                                    onClick = { filterMode = StatsFilterMode.ALL },
+                                    colors = ButtonDefaults.buttonColors(containerColor = BentoCardBorder),
+                                    shape = RoundedCornerShape(10.dp)
                                 ) {
-                                    Text("Kembali ke Bulan Ini (${formatMonthIndo(currentMonthKey)})", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Text("Lihat Semua Riwayat", fontSize = 11.sp, color = BentoTextPrimary)
                                 }
                             }
                         }
                     }
                 } else {
-                    val logsByDate = remember(selectedMonthLogs) {
-                        selectedMonthLogs.groupBy { it.date }
-                    }
+                    val logsByDate = filteredFuelLogs.groupBy { it.date }.entries.sortedByDescending { it.key }
 
                     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                         logsByDate.forEach { (date, logsForDate) ->
@@ -1946,7 +2607,7 @@ fun StatisticsTab(state: VehicleState) {
             }
         }
 
-        // 3. Fuel Type breakdown distribution
+        // ==================== 4. FUEL TYPE BREAKDOWN CARD ====================
         Card(
             colors = CardDefaults.cardColors(containerColor = BentoCardBg),
             shape = RoundedCornerShape(24.dp),
@@ -1963,9 +2624,9 @@ fun StatisticsTab(state: VehicleState) {
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
 
-                val fuelTypeCostMap = remember(state.fuelLogs) {
+                val fuelTypeCostMap = remember(filteredFuelLogs) {
                     val map = mutableMapOf<String, Double>()
-                    for (log in state.fuelLogs) {
+                    for (log in filteredFuelLogs) {
                         map[log.fuelType] = (map[log.fuelType] ?: 0.0) + log.totalCost
                     }
                     map.entries.sortedByDescending { it.value }
@@ -1975,7 +2636,7 @@ fun StatisticsTab(state: VehicleState) {
 
                 if (totalAllFuelCost == 0.0) {
                     Text(
-                        text = "Belum ada catatan biaya bbm.",
+                        text = "Belum ada catatan biaya bbm pada periode ini.",
                         fontSize = 13.sp,
                         color = BentoTextSecondary,
                         modifier = Modifier.fillMaxWidth(),
@@ -1993,7 +2654,7 @@ fun StatisticsTab(state: VehicleState) {
                                 "Dexlite" -> Color(0xFFEC4899)
                                 else -> BentoTextSecondary
                             }
-                            
+
                             Column {
                                 Row(
                                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -2028,6 +2689,31 @@ fun StatisticsTab(state: VehicleState) {
                 }
             }
         }
+    }
+
+    // Modal Dialogs for Flexible Picking
+    if (showMonthYearDialog) {
+        MonthYearPickerDialog(
+            initialMonthKey = selectedMonthKey,
+            onDismiss = { showMonthYearDialog = false },
+            onConfirm = { newKey ->
+                selectedMonthKey = newKey
+                filterMode = StatsFilterMode.MONTH
+            }
+        )
+    }
+
+    if (showDateRangeDialog) {
+        DateRangePickerDialog(
+            initialStartDate = startDateInput,
+            initialEndDate = endDateInput,
+            onDismiss = { showDateRangeDialog = false },
+            onConfirm = { sDate, eDate ->
+                startDateInput = sDate
+                endDateInput = eDate
+                filterMode = StatsFilterMode.DATE_RANGE
+            }
+        )
     }
 }
 
@@ -2168,17 +2854,11 @@ fun EfficiencyLineChart(data: List<Pair<Double, FuelLog>>) {
     }
 }
 
-// Bar chart for monthly expense
+// Daily Expense Bar Chart (for viewing individual days in a month)
 @Composable
-fun MonthlyExpenseBarChart(monthlyLogs: Map<String, List<FuelLog>>) {
-    val monthData = remember(monthlyLogs) {
-        monthlyLogs.entries.map { (month, logs) ->
-            month to logs.sumOf { it.totalCost }
-        }.takeLast(6) // display at most last 6 months
-    }
-
-    val maxVal = remember(monthData) {
-        val maxCost = monthData.maxOfOrNull { it.second } ?: 100000.0
+fun DailyExpenseBarChart(dailyData: List<Pair<String, Double>>) {
+    val maxVal = remember(dailyData) {
+        val maxCost = dailyData.maxOfOrNull { it.second } ?: 100000.0
         (maxCost * 1.2).coerceAtLeast(100000.0)
     }
 
@@ -2190,9 +2870,9 @@ fun MonthlyExpenseBarChart(monthlyLogs: Map<String, List<FuelLog>>) {
     ) {
         val width = size.width
         val height = size.height
-        val marginX = 50.dp.toPx()
-        val marginY = 20.dp.toPx()
-        
+        val marginX = 45.dp.toPx()
+        val marginY = 22.dp.toPx()
+
         val chartW = width - marginX - 10.dp.toPx()
         val chartH = height - marginY * 2
 
@@ -2201,7 +2881,7 @@ fun MonthlyExpenseBarChart(monthlyLogs: Map<String, List<FuelLog>>) {
         for (i in 0..gridLines) {
             val yFactor = i.toFloat() / gridLines
             val y = height - marginY - (yFactor * chartH)
-            
+
             drawLine(
                 color = BentoCardBorder,
                 start = Offset(marginX, y),
@@ -2209,12 +2889,11 @@ fun MonthlyExpenseBarChart(monthlyLogs: Map<String, List<FuelLog>>) {
                 strokeWidth = 1.dp.toPx()
             )
 
-            // Grid text Label (in IDR thousands)
             val valText = (yFactor * maxVal) / 1000.0
-            val formattedLabel = if (valText >= 1000.0) String.format("%.1fM", valText/1000.0) else String.format("%.0fK", valText)
+            val formattedLabel = if (valText >= 1000.0) String.format(Locale.US, "%.1fM", valText/1000.0) else String.format(Locale.US, "%.0fK", valText)
             drawContext.canvas.nativeCanvas.drawText(
                 formattedLabel,
-                5.dp.toPx(),
+                4.dp.toPx(),
                 y + 4.dp.toPx(),
                 android.graphics.Paint().apply {
                     color = BentoTextSecondary.toArgb()
@@ -2225,13 +2904,14 @@ fun MonthlyExpenseBarChart(monthlyLogs: Map<String, List<FuelLog>>) {
         }
 
         // Draw bars
-        val numMonths = monthData.size
-        val colWidth = (chartW / numMonths) * 0.55f
-        val gap = (chartW / numMonths) * 0.45f
+        val numItems = dailyData.size.coerceAtLeast(1)
+        val colWidth = ((chartW / numItems) * 0.6f).coerceAtMost(36.dp.toPx())
+        val totalColsWidth = colWidth * numItems
+        val spacing = if (numItems > 1) (chartW - totalColsWidth) / (numItems + 1) else (chartW - colWidth) / 2
 
-        monthData.forEachIndexed { index, (monthName, totalCost) ->
-            val barHeight = ((totalCost / maxVal).toFloat() * chartH)
-            val x = marginX + gap / 2 + index * (colWidth + gap)
+        dailyData.forEachIndexed { index, (dateStr, totalCost) ->
+            val barHeight = ((totalCost / maxVal).toFloat() * chartH).coerceAtLeast(4.dp.toPx())
+            val x = marginX + spacing + index * (colWidth + spacing)
             val y = height - marginY - barHeight
 
             // Draw Rounded Bar
@@ -2243,10 +2923,10 @@ fun MonthlyExpenseBarChart(monthlyLogs: Map<String, List<FuelLog>>) {
             )
 
             // Draw Value label above bar
-            val formattedValue = if (totalCost >= 1000000.0) String.format("%.2f Jt", totalCost / 1000000.0) else String.format("%.0fK", totalCost / 1000.0)
+            val formattedValue = if (totalCost >= 1000000.0) String.format(Locale.US, "%.1f Jt", totalCost / 1000000.0) else String.format(Locale.US, "%.0fK", totalCost / 1000.0)
             drawContext.canvas.nativeCanvas.drawText(
                 formattedValue,
-                x + colWidth / 2 - 16.dp.toPx(),
+                x + colWidth / 2 - 12.dp.toPx(),
                 y - 6.dp.toPx(),
                 android.graphics.Paint().apply {
                     color = BentoTextPrimary.toArgb()
@@ -2256,17 +2936,406 @@ fun MonthlyExpenseBarChart(monthlyLogs: Map<String, List<FuelLog>>) {
                 }
             )
 
-            // Draw X label (Month)
+            // Draw X label (e.g. "05/10")
+            val label = try {
+                val parts = dateStr.split("-")
+                if (parts.size == 3) "${parts[2]}/${parts[1]}" else dateStr
+            } catch (e: Exception) {
+                dateStr
+            }
+
             drawContext.canvas.nativeCanvas.drawText(
-                monthName,
-                x + colWidth / 2 - 18.dp.toPx(),
+                label,
+                x + colWidth / 2 - 12.dp.toPx(),
                 height - 4.dp.toPx(),
+                android.graphics.Paint().apply {
+                    color = BentoTextSecondary.toArgb()
+                    textSize = 9.dp.toPx()
+                    isAntiAlias = true
+                }
+            )
+        }
+    }
+}
+
+// Monthly Expense Bar Chart (for 12 months in a year or last 6 months)
+@Composable
+fun MonthlyExpenseBarChart(
+    data: List<Pair<String, Double>>
+) {
+    val maxVal = remember(data) {
+        val maxCost = data.maxOfOrNull { it.second } ?: 100000.0
+        (maxCost * 1.2).coerceAtLeast(100000.0)
+    }
+
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(180.dp)
+            .padding(top = 10.dp)
+    ) {
+        val width = size.width
+        val height = size.height
+        val marginX = 45.dp.toPx()
+        val marginY = 22.dp.toPx()
+
+        val chartW = width - marginX - 10.dp.toPx()
+        val chartH = height - marginY * 2
+
+        // Draw horizontal grid lines & labels
+        val gridLines = 4
+        for (i in 0..gridLines) {
+            val yFactor = i.toFloat() / gridLines
+            val y = height - marginY - (yFactor * chartH)
+
+            drawLine(
+                color = BentoCardBorder,
+                start = Offset(marginX, y),
+                end = Offset(width, y),
+                strokeWidth = 1.dp.toPx()
+            )
+
+            val valText = (yFactor * maxVal) / 1000.0
+            val formattedLabel = if (valText >= 1000.0) String.format(Locale.US, "%.1fM", valText/1000.0) else String.format(Locale.US, "%.0fK", valText)
+            drawContext.canvas.nativeCanvas.drawText(
+                formattedLabel,
+                4.dp.toPx(),
+                y + 4.dp.toPx(),
                 android.graphics.Paint().apply {
                     color = BentoTextSecondary.toArgb()
                     textSize = 10.dp.toPx()
                     isAntiAlias = true
                 }
             )
+        }
+
+        // Draw bars
+        val numMonths = data.size.coerceAtLeast(1)
+        val colWidth = (chartW / numMonths) * 0.55f
+        val gap = (chartW / numMonths) * 0.45f
+
+        data.forEachIndexed { index, (monthName, totalCost) ->
+            val barHeight = ((totalCost / maxVal).toFloat() * chartH).coerceAtLeast(if (totalCost > 0) 4.dp.toPx() else 0f)
+            val x = marginX + gap / 2 + index * (colWidth + gap)
+            val y = height - marginY - barHeight
+
+            // Draw Rounded Bar
+            if (barHeight > 0f) {
+                drawRoundRect(
+                    color = BentoAccentIndigo,
+                    topLeft = Offset(x, y),
+                    size = Size(colWidth, barHeight),
+                    cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx())
+                )
+            } else {
+                drawCircle(
+                    color = BentoCardBorder,
+                    radius = 2.dp.toPx(),
+                    center = Offset(x + colWidth / 2, height - marginY - 2.dp.toPx())
+                )
+            }
+
+            // Draw Value label above bar
+            if (totalCost > 0) {
+                val formattedValue = if (totalCost >= 1000000.0) String.format(Locale.US, "%.1f Jt", totalCost / 1000000.0) else String.format(Locale.US, "%.0fK", totalCost / 1000.0)
+                drawContext.canvas.nativeCanvas.drawText(
+                    formattedValue,
+                    x + colWidth / 2 - 12.dp.toPx(),
+                    y - 6.dp.toPx(),
+                    android.graphics.Paint().apply {
+                        color = BentoTextPrimary.toArgb()
+                        textSize = 9.dp.toPx()
+                        typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+                        isAntiAlias = true
+                    }
+                )
+            }
+
+            // Draw X label (Month)
+            drawContext.canvas.nativeCanvas.drawText(
+                monthName,
+                x + colWidth / 2 - 12.dp.toPx(),
+                height - 4.dp.toPx(),
+                android.graphics.Paint().apply {
+                    color = BentoTextSecondary.toArgb()
+                    textSize = 9.5.dp.toPx()
+                    isAntiAlias = true
+                }
+            )
+        }
+    }
+}
+
+// Dialog for visually selecting Month and Year
+@Composable
+fun MonthYearPickerDialog(
+    initialMonthKey: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var year by remember { mutableStateOf(parseYearFromMonthKey(initialMonthKey)) }
+    var selectedMonthIndex by remember { mutableStateOf(parseMonthIndexFromMonthKey(initialMonthKey)) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = BentoCardBg),
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(1.dp, BentoCardBorder),
+            modifier = Modifier.fillMaxWidth().padding(8.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = "Pilih Bulan & Tahun",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp,
+                    color = BentoTextPrimary
+                )
+
+                // Year Stepper
+                Surface(
+                    color = BentoCardBorder.copy(alpha = 0.3f),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = { year -= 1 }, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Default.ChevronLeft, contentDescription = "Tahun Lalu", tint = BentoTextPrimary)
+                        }
+                        Text(
+                            text = "Tahun $year",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            color = BentoTextPrimary
+                        )
+                        IconButton(onClick = { year += 1 }, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Default.ChevronRight, contentDescription = "Tahun Depan", tint = BentoTextPrimary)
+                        }
+                    }
+                }
+
+                // Quick year chips
+                val curYear = remember { Calendar.getInstance().get(Calendar.YEAR) }
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(curYear - 2, curYear - 1, curYear, curYear + 1).forEach { yr ->
+                        FilterChip(
+                            selected = year == yr,
+                            onClick = { year = yr },
+                            label = { Text("$yr", fontSize = 11.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = BentoAccentIndigo,
+                                selectedLabelColor = Color.White
+                            )
+                        )
+                    }
+                }
+
+                // 12 Months Grid (4 rows x 3 columns)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (row in 0 until 4) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            for (col in 0 until 3) {
+                                val monthIdx = row * 3 + col + 1
+                                val monthName = INDO_MONTHS_SHORT[monthIdx - 1]
+                                val isSelected = monthIdx == selectedMonthIndex
+                                Surface(
+                                    color = if (isSelected) BentoAccentIndigo else BentoCardBorder.copy(alpha = 0.25f),
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = BorderStroke(1.dp, if (isSelected) BentoAccentIndigo else BentoCardBorder.copy(alpha = 0.5f)),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { selectedMonthIndex = monthIdx }
+                                ) {
+                                    Box(
+                                        modifier = Modifier.padding(vertical = 10.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = monthName,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            fontSize = 13.sp,
+                                            color = if (isSelected) Color.White else BentoTextPrimary
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Action buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("Batal", color = BentoTextSecondary)
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            val newKey = buildMonthKey(year, selectedMonthIndex)
+                            onConfirm(newKey)
+                            onDismiss()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = BentoAccentIndigo),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Terapkan", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Dialog for setting custom Date Range
+@Composable
+fun DateRangePickerDialog(
+    initialStartDate: String,
+    initialEndDate: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String, String) -> Unit
+) {
+    val today = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()) }
+    var startInput by remember { mutableStateOf(if (initialStartDate.isNotBlank()) initialStartDate else getDaysAgoDate(30)) }
+    var endInput by remember { mutableStateOf(if (initialEndDate.isNotBlank()) initialEndDate else today) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = BentoCardBg),
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(1.dp, BentoCardBorder),
+            modifier = Modifier.fillMaxWidth().padding(8.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text(
+                    text = "Filter Rentang Tanggal",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp,
+                    color = BentoTextPrimary
+                )
+
+                Text(
+                    text = "Pilih preset cepat atau masukkan tanggal spesifik (YYYY-MM-DD):",
+                    fontSize = 12.sp,
+                    color = BentoTextSecondary
+                )
+
+                // Presets
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Surface(
+                        color = BentoCardBorder.copy(alpha = 0.35f),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.clickable {
+                            startInput = getDaysAgoDate(7)
+                            endInput = today
+                        }
+                    ) {
+                        Text("7 Hari", fontSize = 11.sp, color = BentoTextPrimary, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                    }
+                    Surface(
+                        color = BentoCardBorder.copy(alpha = 0.35f),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.clickable {
+                            startInput = getDaysAgoDate(30)
+                            endInput = today
+                        }
+                    ) {
+                        Text("30 Hari", fontSize = 11.sp, color = BentoTextPrimary, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                    }
+                    Surface(
+                        color = BentoCardBorder.copy(alpha = 0.35f),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.clickable {
+                            val curM = today.substring(0, 7)
+                            startInput = "$curM-01"
+                            endInput = today
+                        }
+                    ) {
+                        Text("Bulan Ini", fontSize = 11.sp, color = BentoTextPrimary, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                    }
+                    Surface(
+                        color = BentoCardBorder.copy(alpha = 0.35f),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.clickable {
+                            val lastM = getPreviousMonth(today.substring(0, 7))
+                            startInput = "$lastM-01"
+                            endInput = getEndOfMonthDate(lastM)
+                        }
+                    ) {
+                        Text("Bulan Lalu", fontSize = 11.sp, color = BentoTextPrimary, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                    }
+                }
+
+                OutlinedTextField(
+                    value = startInput,
+                    onValueChange = { startInput = it },
+                    label = { Text("Tanggal Mulai (YYYY-MM-DD)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = BentoTextPrimary,
+                        unfocusedTextColor = BentoTextPrimary,
+                        focusedBorderColor = BentoAccentIndigo,
+                        unfocusedBorderColor = BentoCardBorder
+                    )
+                )
+
+                OutlinedTextField(
+                    value = endInput,
+                    onValueChange = { endInput = it },
+                    label = { Text("Tanggal Selesai (YYYY-MM-DD)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = BentoTextPrimary,
+                        unfocusedTextColor = BentoTextPrimary,
+                        focusedBorderColor = BentoAccentIndigo,
+                        unfocusedBorderColor = BentoCardBorder
+                    )
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("Batal", color = BentoTextSecondary)
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            onConfirm(startInput.trim(), endInput.trim())
+                            onDismiss()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = BentoAccentIndigo),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Terapkan Rentang", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
         }
     }
 }
